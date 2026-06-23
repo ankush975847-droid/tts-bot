@@ -264,9 +264,8 @@ def main() -> None:
     # between Render and Telegram's servers — a brief latency spike is
     # enough to trip it even though nothing is actually broken. We build
     # a custom HTTPXRequest with longer connect/read/write/pool timeouts
-    # and a bigger connection pool, and pass get_updates-specific timeouts
-    # (used for the long-polling call itself) so polling tolerates slow
-    # responses instead of erroring out.
+    # and a bigger connection pool for normal bot API calls (sending
+    # messages, voice notes, etc).
     request = HTTPXRequest(
         connection_pool_size=8,
         connect_timeout=20.0,
@@ -275,12 +274,29 @@ def main() -> None:
         pool_timeout=20.0,
     )
 
+    # The long-polling getUpdates call needs its own, separate request
+    # instance with longer timeouts since it legitimately waits on
+    # Telegram's servers for new updates. PTB's ApplicationBuilder raises
+    # a RuntimeError if you call `.get_updates_connect_timeout(...)` /
+    # `.get_updates_read_timeout(...)` *after* already supplying a custom
+    # `.request(...)` instance -- those shortcut methods are only meant to
+    # configure PTB's own default request object, not retrofit settings
+    # onto one you've already built. Passing a second, dedicated
+    # HTTPXRequest via `.get_updates_request(...)` is the correct way to
+    # set get_updates-specific timeouts alongside a custom main request.
+    get_updates_request = HTTPXRequest(
+        connection_pool_size=1,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+
     application = (
         ApplicationBuilder()
         .token(TOKEN)
         .request(request)
-        .get_updates_connect_timeout(30.0)
-        .get_updates_read_timeout(30.0)
+        .get_updates_request(get_updates_request)
         .build()
     )
 
