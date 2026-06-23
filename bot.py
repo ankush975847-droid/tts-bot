@@ -13,6 +13,7 @@ Environment variables required on Render:
     PORT    -> automatically injected by Render (defaults to 8080 locally)
 """
 
+import asyncio
 import os
 import logging
 import tempfile
@@ -265,6 +266,13 @@ def run_flask():
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
+    # CRITICAL FIX for Python 3.10+: Create and set the event loop explicitly
+    # in the main thread BEFORE starting any background threads. This prevents
+    # "RuntimeError: There is no current event loop in thread 'MainThread'"
+    # when python-telegram-bot tries to create its polling loop.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     # Start the Flask server on a daemon thread so it doesn't block the
     # asyncio event loop that python-telegram-bot needs, and so it shuts
     # down automatically if the main process exits.
@@ -286,4 +294,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-  
