@@ -22,6 +22,7 @@ from flask import Flask
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -202,6 +203,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # FIX: telegram.error.TimedOut / NetworkError during long-polling are
+    # transient and PTB's polling loop already retries them on its own —
+    # logging the full traceback as an `error` for every blip is noisy and
+    # makes a harmless network hiccup look like a crash. Anything else is
+    # still logged at full severity.
+    from telegram.error import TimedOut, NetworkError
+
+    if isinstance(context.error, (TimedOut, NetworkError)):
+        logger.warning("Transient network error (will retry automatically): %s", context.error)
+        return
+
     logger.error("Update %s caused error: %s", update, context.error, exc_info=context.error)
 
 
@@ -234,7 +246,30 @@ def main() -> None:
     flask_thread.start()
     logger.info("Flask keep-alive server started on port %s", PORT)
 
-    application = ApplicationBuilder().token(TOKEN).build()
+    # FIX: telegram.error.TimedOut in the Render logs comes from PTB's
+    # default HTTPXRequest timeouts being too tight for the network path
+    # between Render and Telegram's servers — a brief latency spike is
+    # enough to trip it even though nothing is actually broken. We build
+    # a custom HTTPXRequest with longer connect/read/write/pool timeouts
+    # and a bigger connection pool, and pass get_updates-specific timeouts
+    # (used for the long-polling call itself) so polling tolerates slow
+    # responses instead of erroring out.
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=20.0,
+        read_timeout=20.0,
+        write_timeout=20.0,
+        pool_timeout=20.0,
+    )
+
+    application = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .request(request)
+        .get_updates_connect_timeout(30.0)
+        .get_updates_read_timeout(30.0)
+        .build()
+    )
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -243,16 +278,7 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     logger.info("Starting Telegram bot polling...")
-        # पुरानी वाली लाइन को हटाकर इसे पेस्ट कर दें:
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES, 
-        drop_pending_updates=True,
-        read_timeout=30,
-        write_timeout=30,
-        connect_timeout=30,
-        pool_timeout=30
-    )
-    
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
