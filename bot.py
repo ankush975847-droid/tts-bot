@@ -243,7 +243,16 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     logger.info("Starting Telegram bot polling...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        # पुरानी वाली लाइन को हटाकर इसे पेस्ट कर दें:
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES, 
+        drop_pending_updates=True,
+        read_timeout=30,
+        write_timeout=30,
+        connect_timeout=30,
+        pool_timeout=30
+    )
+    
 
 
 if __name__ == "__main__":
