@@ -1,4 +1,5 @@
-python-telegram-bot
-edge-tts
-langdetect
-Flask
+python-telegram-bot==21.7
+edge-tts==6.1.19
+langdetect==1.0.9
+Flask==3.0.3
+waitress==3.0.0
