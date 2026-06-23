@@ -19,6 +19,7 @@ from typing import Dict
 import edge_tts
 from langdetect import detect, DetectorFactory
 from flask import Flask
+from waitress import serve as waitress_serve
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
@@ -229,7 +230,19 @@ def home():
 
 
 def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+    # FIX: Flask's built-in `app.run()` is a development server -- it
+    # warns against this explicitly and isn't designed to run reliably,
+    # indefinitely, in a background thread alongside a competing asyncio
+    # event loop (the bot's polling loop). Under Render's container this
+    # combination has been seen to make the keep-alive port flaky or slow
+    # to open, which is consistent with Render's port scanner timing out
+    # even though the thread technically started. `waitress` is a small,
+    # pure-Python production WSGI server with none of those caveats.
+    try:
+        logger.info("Flask server attempting to bind 0.0.0.0:%s", PORT)
+        waitress_serve(flask_app, host="0.0.0.0", port=PORT)
+    except Exception:
+        logger.exception("Flask server failed to start -- Render will not detect an open port")
 
 
 # --------------------------------------------------------------------------- #
