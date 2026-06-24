@@ -189,18 +189,39 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Show a "recording voice" indicator while we generate the audio.
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
-    tmp_path = None
+    mp3_path = None
+    ogg_path = None
     try:
-        # Generate a unique temp file path (.ogg works as a native voice note).
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp_file:
-            tmp_path = tmp_file.name
+        # edge_tts outputs MP3 audio from Microsoft's servers.
+        # Telegram voice messages require OGG with OPUS codec, so we:
+        #   1. Save the raw output as .mp3
+        #   2. Convert to .ogg (opus) with ffmpeg
+        #   3. Send the converted file
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+            mp3_path = tmp_mp3.name
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp_ogg:
+            ogg_path = tmp_ogg.name
 
         communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(tmp_path)
+        await communicate.save(mp3_path)
+
+        # Convert MP3 -> OGG OPUS (required format for Telegram voice notes).
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y",
+            "-i", mp3_path,
+            "-c:a", "libopus",
+            "-b:a", "64k",
+            ogg_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg conversion failed: {stderr.decode()[:200]}")
 
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_VOICE)
 
-        with open(tmp_path, "rb") as audio_file:
+        with open(ogg_path, "rb") as audio_file:
             await update.message.reply_voice(
                 voice=audio_file,
                 caption=f"🌐 Detected: {lang_code} | 🎙️ Voice: {gender.capitalize()}",
@@ -213,12 +234,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
     finally:
-        # Always clean up the temp file from disk, success or failure.
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError as exc:
-                logger.warning("Could not delete temp file %s: %s", tmp_path, exc)
+        # Always clean up both temp files from disk.
+        for path in (mp3_path, ogg_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError as exc:
+                    logger.warning("Could not delete temp file %s: %s", path, exc)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -267,15 +289,6 @@ def run_flask():
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
-    # Python 3.10+ no longer implicitly creates an event loop when
-    # asyncio.get_event_loop() is called in the main thread. PTB v20's
-    # Updater internally calls get_event_loop() before run_polling() spins
-    # up asyncio.run(), so we must create and register a loop here — before
-    # the Flask daemon thread starts — to avoid:
-    #   RuntimeError: There is no current event loop in thread 'MainThread'
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     # Start the Flask server on a daemon thread so it doesn't block the
     # asyncio event loop that python-telegram-bot needs, and so it shuts
     # down automatically if the main process exits.
