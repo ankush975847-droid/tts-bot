@@ -13,6 +13,7 @@ Environment variables required on Render:
     PORT    -> automatically injected by Render (defaults to 8080 locally)
 """
 
+import asyncio
 import os
 import logging
 import tempfile
@@ -84,6 +85,7 @@ VOICE_MAP = {
     "ko": ("ko-KR-SunHiNeural", "ko-KR-InJoonNeural"),
     "zh-cn": ("zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"),
     "zh-tw": ("zh-TW-HsiaoChenNeural", "zh-TW-YunJheNeural"),
+    "zh": ("zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"),  # added: langdetect may return plain 'zh'
     "ar": ("ar-SA-ZariyahNeural", "ar-SA-HamedNeural"),
     "bn": ("bn-IN-TanishaaNeural", "bn-IN-BashkarNeural"),
     "ur": ("ur-PK-UzmaNeural", "ur-PK-AsadNeural"),
@@ -102,7 +104,7 @@ VOICE_MAP = {
     "te": ("te-IN-ShrutiNeural", "te-IN-MohanNeural"),
     "mr": ("mr-IN-AarohiNeural", "mr-IN-ManoharNeural"),
     "gu": ("gu-IN-DhwaniNeural", "gu-IN-NiranjanNeural"),
-    "pa": ("pa-IN-OjasNeural", "pa-IN-VaaniNeural"),
+    "pa": ("pa-IN-VaaniNeural", "pa-IN-OjasNeural"),  # fixed: Vaani=female, Ojas=male
 }
 
 # Fallback voice pair if langdetect returns a language we haven't mapped.
@@ -265,6 +267,15 @@ def run_flask():
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
+    # Python 3.10+ no longer implicitly creates an event loop when
+    # asyncio.get_event_loop() is called in the main thread. PTB v20's
+    # Updater internally calls get_event_loop() before run_polling() spins
+    # up asyncio.run(), so we must create and register a loop here — before
+    # the Flask daemon thread starts — to avoid:
+    #   RuntimeError: There is no current event loop in thread 'MainThread'
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     # Start the Flask server on a daemon thread so it doesn't block the
     # asyncio event loop that python-telegram-bot needs, and so it shuts
     # down automatically if the main process exits.
