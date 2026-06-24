@@ -31,8 +31,18 @@ except Exception:
 # ============================================================================
 #  🔧 CONFIGURATION
 # ============================================================================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT-YOUR-BOT-TOKEN-HERE")
-ADMIN_IDS = {int(x) for x in os.environ.get("ADMIN_IDS", "123456789").split(",") if x.strip()}
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+
+def _parse_admin_ids(raw):
+    """Robustly parse comma/space separated admin IDs; never crash on bad input."""
+    ids = set()
+    for chunk in re.split(r"[,\s]+", raw or ""):
+        chunk = chunk.strip()
+        if chunk.lstrip("-").isdigit():
+            ids.add(int(chunk))
+    return ids
+
+ADMIN_IDS = _parse_admin_ids(os.environ.get("ADMIN_IDS", ""))
 
 # Hidden global constant — Admin/Navy mode ALWAYS splits at exactly 200.
 ADMIN_NAVY_SPLIT = 200
@@ -57,10 +67,16 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
 # ============================================================================
 #  ✨ PREMIUM ANIMATED CUSTOM EMOJI ENGINE
 # ============================================================================
-# Set to True since you have Telegram Premium and want live animated reactions!
-USE_CUSTOM_EMOJI = bool(int(os.environ.get("USE_CUSTOM_EMOJI", "1")))
+# Telegram Premium "live" emojis render via:  <tg-emoji emoji-id="ID">😀</tg-emoji>
+#   - emoji-id MUST be a real custom_emoji_id your bot can access (from a pack
+#     owned by you / available to the bot). Replace the placeholders below.
+#   - The fallback glyph inside the tag is what NON-premium users see.
+#   - If USE_CUSTOM_EMOJI is False, only fallback glyphs are sent (100% safe,
+#     no API errors). Flip to True once you have filled in valid IDs.
+USE_CUSTOM_EMOJI = os.environ.get("USE_CUSTOM_EMOJI", "0").strip().lower() in ("1", "true", "yes", "on")
 
 CUSTOM_EMOJI = {
+    # name      : (emoji_id_PLACEHOLDER, fallback_glyph)
     "diamond":   ("5377306342157541845", "💎"),
     "sparkle":   ("5377534935414753930", "✨"),
     "rocket":    ("5377498341074542641", "🚀"),
@@ -125,9 +141,10 @@ def ce(name):
 # ============================================================================
 #  🔐 THREAD-SAFETY PRIMITIVES
 # ============================================================================
-SESSION_LOCK = threading.RLock()   
-USERS_LOCK = threading.Lock()      
+SESSION_LOCK = threading.RLock()   # protects the per-user session dictionary
+USERS_LOCK = threading.Lock()      # protects users.txt read/write
 
+# Per-user volatile state: { user_id: { "data": {...}, "lang": "en", "caption": True } }
 SESSIONS = {}
 
 def get_session(uid):
@@ -151,6 +168,8 @@ def get_lang(uid):
 # ============================================================================
 #  🌐 INTERNATIONALIZATION (en / hi / zh)  — button labels (plain text only)
 # ============================================================================
+# NOTE: Inline button text does NOT support HTML or custom emoji; only the
+# message BODY does. So buttons use plain Unicode glyphs.
 BTN = {
     "text_to_vcf":  {"en": "📄 Text to VCF",   "hi": "📄 टेक्स्ट से VCF", "zh": "📄 文本转VCF"},
     "vcf_to_text":  {"en": "📇 VCF to Text",   "hi": "📇 VCF से टेक्स्ट", "zh": "📇 VCF转文本"},
@@ -165,6 +184,10 @@ BTN = {
     "home":         {"en": "🏠 Main Menu",     "hi": "🏠 मुख्य मेनू",      "zh": "🏠 主菜单"},
 }
 
+# ----------------------------------------------------------------------------
+#  All UI strings — valid HTML, with premium animated emojis via ce().
+#  Dynamic values use [[TOKEN]] sentinels (brace-free), filled by t() at runtime.
+# ----------------------------------------------------------------------------
 TXT = {
     "welcome": {
         "en": f"{ce('sparkle')}{ce('diamond')} <b>Welcome to VCF Pro Manager!</b> {ce('diamond')}{ce('sparkle')}\n\n{ce('rocket')} Your all-in-one premium contact toolkit.\n{ce('point')} Tap an action from the dazzling menu below:",
@@ -253,7 +276,7 @@ TXT = {
     "ask_split": {
         "en": f"{ce('scissors')}{ce('target')} <b>Step 5:</b> Enter <b>contacts per file</b> ([[MN]]–[[MX]]):",
         "hi": f"{ce('scissors')}{ce('target')} <b>चरण 5:</b> <b>प्रति फ़ाइल कॉन्टैक्ट</b> दर्ज करें ([[MN]]–[[MX]]):",
-        "zh": f"{ce('scissors')}{ce('target')} <b>第5步:</b> 输入 <b>每个文件的联系人数</b>（[[MN]]–[[MX]]）：",
+        "zh": f"{ce('scissors')}{ce('target')} <b>第5步:</b> 输入 <b>每个文件的联系人数</b>（mn–mx）：",
     },
     "bad_number": {
         "en": f"{ce('warn')} Please send a valid number. Try again!",
@@ -368,11 +391,6 @@ TXT = {
         "hi": f"{ce('inbox')}{ce('sparkle')} पहले मेनू से एक मॉड्यूल चुनें, फिर फ़ाइल भेजें! {ce('point')}",
         "zh": f"{ce('inbox')}{ce('sparkle')} 请先从菜单选择模块，然后发送文件！{ce('point')}",
     },
-    "vcf_editor_welcome": {
-        "en": f"{ce('gear')} <b>VCF Editor Active!</b>\n\n📥 Send me a <code>.vcf</code> file to edit:",
-        "hi": f"{ce('gear')} <b>VCF एडिटर सक्रिय!</b>\n\n📥 एडिट करने के लिए <code>.vcf</code> फ़ाइल भेजें:",
-        "zh": f"{ce('gear')} <b>VCF 编辑器已开启！</b>\n\n📥 请发送 <code>.vcf</code> 文件：",
-    }
 }
 
 def t(uid, key, **kw):
@@ -392,6 +410,15 @@ def _ib(uid, key):
     return types.InlineKeyboardButton(BTN[key][lang], callback_data=f"menu:{key}")
 
 def main_menu(uid):
+    """
+    Dynamic premium InlineKeyboardMarkup main menu.
+    Layout:
+      Row 1: 📄 Text to VCF      | 📇 VCF to Text
+      Row 2: 👑 Admin/Navy VCF   | ✏️ VCF Editor
+      Row 3: 🔗 Merge File       | ✂️ Split File
+      Row 4: ⚙️ Rename File      | 🔍 Get VCF Details
+      Row 5: 🌐 Language Selection
+    """
     kb = types.InlineKeyboardMarkup()
     kb.row(_ib(uid, "text_to_vcf"), _ib(uid, "vcf_to_text"))
     kb.row(_ib(uid, "admin_navy"),  _ib(uid, "vcf_editor"))
@@ -427,7 +454,7 @@ def lang_menu():
 # ============================================================================
 #  🧰 CORE HELPERS  (parsing, VCF building, file I/O)
 # ============================================================================
-NUMBER_RE = re.compile(r'\+?\d[\d\-\s().]{5,}\d')   
+NUMBER_RE = re.compile(r'\+?\d[\d\-\s().]{5,}\d')   # loose grab, refined below
 VCARD_RE = re.compile(r'BEGIN:VCARD.*?END:VCARD', re.DOTALL | re.IGNORECASE)
 TEL_RE = re.compile(r'TEL[^:]*:([+\d\-\s().]+)', re.IGNORECASE)
 FN_RE = re.compile(r'^FN:(.*)$', re.IGNORECASE | re.MULTILINE)
@@ -566,6 +593,21 @@ def all_users():
 GLOBAL_COMMANDS = {"/start", "/help", "/cancel", "/ping", "/stats", "/broadcast", "/caption"}
 
 def check_menu_or_commands(message):
+    """
+    Central re-entrancy gatekeeper. Run at the TOP of every step-handler.
+
+    If, while inside a conversational step, the user types a global command,
+    we ATOMICALLY:
+      1. clear any pending next-step handler,
+      2. wipe the active user data session,
+      3. execute the command,
+      4. signal the caller to HALT (return True).
+
+    NOTE: With the inline UI, menu taps arrive as callback queries and are
+    intercepted/cleared by `on_menu` (see below) — the same atomic guarantee.
+
+    Returns True if the current step should abort, False to continue normally.
+    """
     uid = message.from_user.id
     text = (message.text or "").strip()
     cmd = text.split()[0] if text else ""
@@ -577,6 +619,7 @@ def check_menu_or_commands(message):
     return False
 
 def _dispatch_command(message, cmd):
+    """Execute a global command (used by the gatekeeper to re-enter cleanly)."""
     if cmd == "/start":
         cmd_start(message)
     elif cmd == "/help":
@@ -664,13 +707,14 @@ def step_broadcast_send(message):
         try:
             bot.send_message(int(u), f"{ce('mega')}{ce('sparkle')} <b>Broadcast</b>\n\n{escape(payload)}")
             ok += 1
-            time.sleep(0.05)  
+            time.sleep(0.05)  # gentle throttle to respect rate limits
         except Exception:
             fail += 1
     bot.send_message(message.chat.id, t(uid, "broadcast_done", ok=ok, fail=fail), reply_markup=main_menu(uid))
 
 @bot.message_handler(commands=["done"])
 def cmd_done(message):
+    """Global /done — primarily used to finalize the merge queue."""
     uid = message.from_user.id
     chat_id = message.chat.id
     with SESSION_LOCK:
@@ -682,6 +726,7 @@ def cmd_done(message):
 
 @bot.message_handler(commands=["skip"])
 def cmd_skip(message):
+    """Global /skip — only meaningful inside steps; otherwise harmless."""
     bot.send_message(message.chat.id, f"{ce('back')} Nothing to skip right now. 😊")
 
 # ============================================================================
@@ -704,6 +749,7 @@ def on_lang(call):
 
 @bot.callback_query_handler(func=lambda c: c.data == "merge:done")
 def on_merge_done(call):
+    """Inline 'Done & Merge' button -> finalize the merge queue."""
     uid = call.from_user.id
     chat_id = call.message.chat.id
     try:
@@ -719,6 +765,11 @@ def on_merge_done(call):
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("menu:"))
 def on_menu(call):
+    """
+    Inline main-menu router. THIS is the anti-loop gatekeeper for callbacks:
+    a menu tap mid-conversation atomically clears the pending step-handler and
+    wipes the active volatile session data before routing to the new module.
+    """
     uid = call.from_user.id
     chat_id = call.message.chat.id
     key = call.data.split(":", 1)[1]
@@ -727,9 +778,11 @@ def on_menu(call):
     except Exception:
         pass
 
+    # --- ATOMIC ANTI-LOOP RESET ---
     bot.clear_step_handler_by_chat_id(chat_id)
     reset_user_data(uid)
     register_user(uid)
+    # ------------------------------
 
     route_menu(chat_id, uid, key)
 
@@ -737,6 +790,7 @@ def on_menu(call):
 #  🧭 MENU ROUTER
 # ============================================================================
 def route_menu(chat_id, uid, key):
+    """Dispatch a canonical menu key to its module entrypoint."""
     if key == "home":
         bot.send_message(chat_id, t(uid, "welcome"), reply_markup=main_menu(uid))
     elif key == "language":
@@ -748,7 +802,7 @@ def route_menu(chat_id, uid, key):
     elif key == "admin_navy":
         start_admin_navy(chat_id, uid)
     elif key == "vcf_editor":
-        start_vcf_editor(chat_id, uid)
+        start_get_details(chat_id, uid)
     elif key == "merge_file":
         start_merge(chat_id, uid)
     elif key == "split_file":
@@ -797,11 +851,11 @@ def step_t2v_input(message):
         bot.register_next_step_handler(msg, step_t2v_input)
         return
 
-    random.shuffle(numbers)  
+    random.shuffle(numbers)  # randomize as specified
     with SESSION_LOCK:
         get_session(uid)["data"]["numbers"] = numbers
     bot.send_message(message.chat.id, t(uid, "found_numbers", n=len(numbers)))
-    msg = bot.send_message(message.chat.id, t(uid, "ask_vcf_name"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_vcf_name"))
     bot.register_next_step_handler(msg, step_t2v_name)
 
 def step_t2v_name(message):
@@ -810,7 +864,7 @@ def step_t2v_name(message):
     uid = message.from_user.id
     with SESSION_LOCK:
         get_session(uid)["data"]["filename"] = (message.text or "contacts").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_prefix"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_prefix"))
     bot.register_next_step_handler(msg, step_t2v_prefix)
 
 def step_t2v_prefix(message):
@@ -819,7 +873,7 @@ def step_t2v_prefix(message):
     uid = message.from_user.id
     with SESSION_LOCK:
         get_session(uid)["data"]["prefix"] = (message.text or "Contact").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_company"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_company"))
     bot.register_next_step_handler(msg, step_t2v_company)
 
 def step_t2v_company(message):
@@ -830,7 +884,7 @@ def step_t2v_company(message):
     company = "" if text.lower() in ("/skip", "skip") else text
     with SESSION_LOCK:
         get_session(uid)["data"]["company"] = company
-    msg = bot.send_message(message.chat.id, t(uid, "ask_start_index"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_start_index"))
     bot.register_next_step_handler(msg, step_t2v_start)
 
 def step_t2v_start(message):
@@ -840,12 +894,12 @@ def step_t2v_start(message):
     try:
         start_idx = int(re.sub(r'\D', '', (message.text or "1")) or "1")
     except ValueError:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
         bot.register_next_step_handler(msg, step_t2v_start)
         return
     with SESSION_LOCK:
         get_session(uid)["data"]["start_index"] = start_idx
-    msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=DEFAULT_SPLIT_MIN, mx=DEFAULT_SPLIT_MAX), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=DEFAULT_SPLIT_MIN, mx=DEFAULT_SPLIT_MAX))
     bot.register_next_step_handler(msg, step_t2v_split)
 
 def step_t2v_split(message):
@@ -857,9 +911,10 @@ def step_t2v_split(message):
     except ValueError:
         split = 0
     if split <= 0:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
         bot.register_next_step_handler(msg, step_t2v_split)
         return
+    # Clamp smoothly into the 200–250 margin.
     split = max(DEFAULT_SPLIT_MIN, min(DEFAULT_SPLIT_MAX, split))
 
     with SESSION_LOCK:
@@ -890,6 +945,7 @@ def start_admin_navy(chat_id, uid):
     bot.register_next_step_handler(msg, step_an_vip)
 
 def _grab_numbers(message):
+    """Helper: read numbers from a document or pasted text in a single message."""
     if message.content_type == "document":
         path, orig = download_to_temp(message)
         try:
@@ -913,12 +969,12 @@ def step_an_vip(message):
     with SESSION_LOCK:
         get_session(uid)["data"]["vips"] = vips
     if vips:
-        msg = bot.send_message(message.chat.id, t(uid, "admin_vip_prefix"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "admin_vip_prefix"))
         bot.register_next_step_handler(msg, step_an_vip_prefix)
     else:
         with SESSION_LOCK:
             get_session(uid)["data"]["vip_prefix"] = "Admin"
-        msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"))
         bot.register_next_step_handler(msg, step_an_navy)
 
 def step_an_vip_prefix(message):
@@ -927,7 +983,7 @@ def step_an_vip_prefix(message):
     uid = message.from_user.id
     with SESSION_LOCK:
         get_session(uid)["data"]["vip_prefix"] = (message.text or "Admin").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"))
     bot.register_next_step_handler(msg, step_an_navy)
 
 def step_an_navy(message):
@@ -936,12 +992,12 @@ def step_an_navy(message):
     uid = message.from_user.id
     navy = _grab_numbers(message)
     if not navy:
-        msg = bot.send_message(message.chat.id, t(uid, "no_numbers"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "no_numbers"))
         bot.register_next_step_handler(msg, step_an_navy)
         return
     with SESSION_LOCK:
         get_session(uid)["data"]["navy"] = navy
-    msg = bot.send_message(message.chat.id, t(uid, "admin_navy_prefix"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "admin_navy_prefix"))
     bot.register_next_step_handler(msg, step_an_navy_prefix)
 
 def step_an_navy_prefix(message):
@@ -950,7 +1006,7 @@ def step_an_navy_prefix(message):
     uid = message.from_user.id
     with SESSION_LOCK:
         get_session(uid)["data"]["navy_prefix"] = (message.text or "Navy").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_outfile"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_outfile"))
     bot.register_next_step_handler(msg, step_an_outfile)
 
 def step_an_outfile(message):
@@ -967,7 +1023,9 @@ def step_an_outfile(message):
 
     bot.send_message(message.chat.id, t(uid, "building"))
     try:
+        # VIP cards first, then Navy cards — single combined deck.
         cards = build_vcards(vips, vip_prefix, "", 1) + build_vcards(navy, navy_prefix, "", 1)
+        # NO split prompt — always auto-split at the hidden constant (200).
         n_files = send_vcf_chunks(uid, message.chat.id, cards, fname, ADMIN_NAVY_SPLIT)
         bot.send_message(message.chat.id, t(uid, "done_files", n=n_files, c=len(cards)), reply_markup=main_menu(uid))
     except Exception as e:
@@ -989,7 +1047,7 @@ def step_vcf2text_file(message):
         return
     uid = message.from_user.id
     if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
         bot.register_next_step_handler(msg, step_vcf2text_file)
         return
 
@@ -1011,7 +1069,7 @@ def step_vcf2text_file(message):
                 message.chat.id, f, visible_file_name="numbers.txt",
                 caption=caption_for(uid, f"{ce('card')}{ce('check')} Extracted <b>{len(numbers)}</b> unique numbers! {ce('diamond')}"),
             )
-        bot.send_message(message.chat.id, f"{ce('party')} Done!", reply_markup=main_menu(uid))
+        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
     finally:
@@ -1020,96 +1078,7 @@ def step_vcf2text_file(message):
         reset_user_data(uid)
 
 # ============================================================================
-#  ✏️ MODULE 4 — VCF EDITOR
-# ============================================================================
-def start_vcf_editor(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "vcf_editor"}
-    msg = bot.send_message(chat_id, t(uid, "vcf_editor_welcome"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_editor_file)
-
-def step_editor_file(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=home_menu(uid))
-        bot.register_next_step_handler(msg, step_editor_file)
-        return
-    
-    in_path = None
-    try:
-        in_path, orig = download_to_temp(message)
-        with open(in_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
-        
-        cards = [c.strip() for c in VCARD_RE.findall(raw)]
-        if not cards:
-            bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=main_menu(uid))
-            reset_user_data(uid)
-            return
-            
-        with SESSION_LOCK:
-            get_session(uid)["data"]["cards"] = cards
-            get_session(uid)["data"]["orig_name"] = orig
-            
-        bot.send_message(message.chat.id, t(uid, "found_numbers", n=len(cards)))
-        msg = bot.send_message(message.chat.id, t(uid, "ask_prefix"), reply_markup=home_menu(uid))
-        bot.register_next_step_handler(msg, step_editor_prefix)
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-        reset_user_data(uid)
-    finally:
-        safe_remove(in_path)
-
-def step_editor_prefix(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    prefix = (message.text or "Contact").strip()
-    with SESSION_LOCK:
-        get_session(uid)["data"]["prefix"] = prefix
-    msg = bot.send_message(message.chat.id, t(uid, "ask_basename"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_editor_finalize)
-
-def step_editor_finalize(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    base = (message.text or "Edited").strip()
-    
-    with SESSION_LOCK:
-        data = get_session(uid)["data"]
-        cards = data.get("cards", [])
-        prefix = data.get("prefix", "Contact")
-        
-    bot.send_message(message.chat.id, t(uid, "building"))
-    out_path = None
-    try:
-        edited_cards = []
-        for idx, card in enumerate(cards, start=1):
-            name = f"{prefix} {idx}"
-            card = re.sub(r'FN:[^\n\r]*', f'FN:{name}', card)
-            card = re.sub(r'N:[^\n\r]*', f'N:;{name};;;;', card)
-            edited_cards.append(card)
-            
-        merged = "\n".join(edited_cards) + "\n"
-        out_path = write_temp(merged, ".vcf")
-        
-        with open(out_path, "rb") as f:
-            bot.send_document(
-                message.chat.id, f, visible_file_name=f"{base}.vcf",
-                caption=caption_for(uid, f"{ce('gear')}{ce('check')} Edited <b>{len(edited_cards)}</b> contacts successfully!"),
-            )
-        bot.send_message(message.chat.id, f"{ce('party')} Done!", reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        safe_remove(out_path)
-        reset_user_data(uid)
-
-# ============================================================================
-#  ✂️ MODULE 5 — VCF SPLITTER
+#  ✂️ MODULE 4 — VCF SPLITTER
 # ============================================================================
 def start_split(chat_id, uid):
     with SESSION_LOCK:
@@ -1122,7 +1091,7 @@ def step_split_file(message):
         return
     uid = message.from_user.id
     if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
         bot.register_next_step_handler(msg, step_split_file)
         return
     in_path = None
@@ -1138,7 +1107,7 @@ def step_split_file(message):
         with SESSION_LOCK:
             get_session(uid)["data"]["cards"] = cards
         bot.send_message(message.chat.id, t(uid, "found_numbers", n=len(cards)))
-        msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=1, mx=1000), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=1, mx=1000))
         bot.register_next_step_handler(msg, step_split_limit)
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
@@ -1155,12 +1124,12 @@ def step_split_limit(message):
     except ValueError:
         limit = 0
     if limit <= 0:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
         bot.register_next_step_handler(msg, step_split_limit)
         return
     with SESSION_LOCK:
         get_session(uid)["data"]["limit"] = limit
-    msg = bot.send_message(message.chat.id, t(uid, "ask_basename"), reply_markup=home_menu(uid))
+    msg = bot.send_message(message.chat.id, t(uid, "ask_basename"))
     bot.register_next_step_handler(msg, step_split_basename)
 
 def step_split_basename(message):
@@ -1174,6 +1143,7 @@ def step_split_basename(message):
         limit = data.get("limit", 200)
     bot.send_message(message.chat.id, t(uid, "building"))
     try:
+        # Produce Name_Part_1.vcf style names.
         n_files = send_vcf_chunks(uid, message.chat.id, cards, f"{base}_Part", limit)
         bot.send_message(message.chat.id, t(uid, "done_files", n=n_files, c=len(cards)), reply_markup=main_menu(uid))
     except Exception as e:
@@ -1182,7 +1152,7 @@ def step_split_basename(message):
         reset_user_data(uid)
 
 # ============================================================================
-#  🔗 MODULE 6 — MERGE
+#  🔗 MODULE 5 — MERGE
 # ============================================================================
 def start_merge(chat_id, uid):
     with SESSION_LOCK:
@@ -1196,6 +1166,7 @@ def step_merge_collect(message):
     uid = message.from_user.id
     text = (message.text or "").strip()
 
+    # Finish on typed /done (the inline 'Done & Merge' button is handled by on_merge_done).
     if text == "/done":
         finalize_merge_prompt(message.chat.id, uid)
         return
@@ -1211,10 +1182,11 @@ def step_merge_collect(message):
                 qlen = len(get_session(uid)["data"]["queue"])
             bot.send_message(message.chat.id, t(uid, "merge_added", n=qlen), reply_markup=merge_menu(uid))
         except Exception as e:
-            bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=merge_menu(uid))
+            bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))))
     else:
         bot.send_message(message.chat.id, t(uid, "merge_collect"), reply_markup=merge_menu(uid))
 
+    # Keep listening for more files.
     bot.register_next_step_handler_by_chat_id(message.chat.id, step_merge_collect)
 
 def finalize_merge_prompt(chat_id, uid):
@@ -1225,7 +1197,7 @@ def finalize_merge_prompt(chat_id, uid):
         bot.register_next_step_handler(msg, step_merge_collect)
         return
     bot.clear_step_handler_by_chat_id(chat_id)
-    msg = bot.send_message(chat_id, t(uid, "ask_outfile"), reply_markup=home_menu(uid))
+    msg = bot.send_message(chat_id, t(uid, "ask_outfile"))
     bot.register_next_step_handler(msg, step_merge_finalize)
 
 def step_merge_finalize(message):
@@ -1244,6 +1216,7 @@ def step_merge_finalize(message):
             if cards:
                 all_cards.extend(c.strip() for c in cards)
             else:
+                # Treat as raw numbers (.txt) -> build vCards.
                 nums = extract_numbers(content)
                 all_cards.extend(build_vcards(nums, "Contact", "", 1))
         merged = "\n".join(all_cards) + "\n"
@@ -1253,7 +1226,7 @@ def step_merge_finalize(message):
                 message.chat.id, f, visible_file_name=f"{fname}.vcf",
                 caption=caption_for(uid, f"{ce('link')}{ce('diamond')} Merged <b>{len(all_cards)}</b> contacts from <b>{len(queue)}</b> files! {ce('rocket')}"),
             )
-        bot.send_message(message.chat.id, f"{ce('party')} Done!", reply_markup=main_menu(uid))
+        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
     finally:
@@ -1261,7 +1234,7 @@ def step_merge_finalize(message):
         reset_user_data(uid)
 
 # ============================================================================
-#  ⚙️ MODULE 7 — QUICK RENAME
+#  ⚙️ MODULE 6 — QUICK RENAME
 # ============================================================================
 def start_rename(chat_id, uid):
     with SESSION_LOCK:
@@ -1274,7 +1247,7 @@ def step_rename_file(message):
         return
     uid = message.from_user.id
     if message.content_type != "document":
-        msg = bot.send_message(message.chat.id, t(uid, "rename_send"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "rename_send"))
         bot.register_next_step_handler(msg, step_rename_file)
         return
     try:
@@ -1283,7 +1256,7 @@ def step_rename_file(message):
         with SESSION_LOCK:
             get_session(uid)["data"]["path"] = path
             get_session(uid)["data"]["ext"] = ext
-        msg = bot.send_message(message.chat.id, t(uid, "rename_ask"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "rename_ask"))
         bot.register_next_step_handler(msg, step_rename_name)
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
@@ -1298,6 +1271,7 @@ def step_rename_name(message):
         data = get_session(uid)["data"]
         path = data.get("path")
         ext = data.get("ext", "")
+    # Avoid double extensions; preserve the original extension.
     if ext and not new_name.lower().endswith(ext.lower()):
         new_name = new_name + ext
     try:
@@ -1306,7 +1280,7 @@ def step_rename_name(message):
                 message.chat.id, f, visible_file_name=new_name,
                 caption=caption_for(uid, f"{ce('gear')}{ce('check')} Renamed to <b>{escape(new_name)}</b> {ce('diamond')}"),
             )
-        bot.send_message(message.chat.id, f"{ce('party')} Done!", reply_markup=main_menu(uid))
+        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
     finally:
@@ -1314,7 +1288,7 @@ def step_rename_name(message):
         reset_user_data(uid)
 
 # ============================================================================
-#  🔍 MODULE 8 — ADVANCED VCF DETAILS SCANNER
+#  🔍 MODULE 7 — ADVANCED VCF DETAILS SCANNER
 # ============================================================================
 def start_get_details(chat_id, uid):
     with SESSION_LOCK:
@@ -1327,7 +1301,7 @@ def step_details_file(message):
         return
     uid = message.from_user.id
     if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=home_menu(uid))
+        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
         bot.register_next_step_handler(msg, step_details_file)
         return
 
@@ -1338,7 +1312,7 @@ def step_details_file(message):
             raw = f.read()
         cards = VCARD_RE.findall(raw)
 
-        parsed = []   
+        parsed = []   # list of (name, number)
         for card in cards:
             fn = FN_RE.search(card)
             name = fn.group(1).strip() if fn else "Unknown"
@@ -1350,6 +1324,7 @@ def step_details_file(message):
         first_name = parsed[0][0] if parsed else "—"
         last_name = parsed[-1][0] if parsed else "—"
 
+        # Premium HTML summary of first 50 contacts.
         preview = parsed[:50]
         lines = [f"{ce('magnify')}{ce('diamond')} <b>VCF Audit Report</b> {ce('diamond')}\n",
                  f"{ce('folder')} <b>File:</b> <code>{escape(orig)}</code>",
@@ -1360,10 +1335,12 @@ def step_details_file(message):
         for i, (nm, nb) in enumerate(preview, 1):
             lines.append(f"<code>{i:>3}.</code> {ce('person')} {escape(nm)} — {ce('phone')} <code>{escape(nb)}</code>")
         report = "\n".join(lines)
+        # Telegram message hard limit ~4096 chars; trim defensively.
         if len(report) > 3900:
             report = report[:3900] + f"\n…{ce('scissors')} <i>(truncated — see attached log)</i>"
         bot.send_message(message.chat.id, report)
 
+        # Full detailed .txt log of ALL names + numbers.
         log_lines = [f"{i+1}. {nm} -> {nb}" for i, (nm, nb) in enumerate(parsed)]
         log_path = write_temp("VCF DETAILED LOG\n=================\n" + "\n".join(log_lines) + "\n", ".txt")
         with open(log_path, "rb") as f:
@@ -1371,7 +1348,7 @@ def step_details_file(message):
                 message.chat.id, f, visible_file_name=f"{os.path.splitext(orig)[0]}_log.txt",
                 caption=caption_for(uid, f"{ce('page')}{ce('check')} Full log of <b>{total}</b> contacts. {ce('diamond')}"),
             )
-        bot.send_message(message.chat.id, f"{ce('party')} Done!", reply_markup=main_menu(uid))
+        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
     except Exception as e:
         bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
     finally:
@@ -1380,35 +1357,42 @@ def step_details_file(message):
         reset_user_data(uid)
 
 # ============================================================================
-#  🗂️ CATCH-ALL HANDLERS
+#  🗂️ CATCH-ALL HANDLERS  (idle-state routing / nudges)
 # ============================================================================
 @bot.message_handler(content_types=["text"])
 def catch_all_text(message):
+    """
+    Runs only when no step-handler is active. With the inline UI all navigation
+    happens via callbacks, so free text while idle just gets a gentle nudge back
+    to the premium menu (global commands are handled by their own handlers).
+    """
     uid = message.from_user.id
     register_user(uid)
-    bot.send_message(uid, t(uid, "menu_hint"), reply_markup=main_menu(uid))
+    bot.send_message(message.chat.id, t(uid, "menu_hint"), reply_markup=main_menu(uid))
 
 @bot.message_handler(content_types=["document", "photo", "audio", "video"])
 def catch_all_files(message):
+    """Files received while idle (no active step) -> remind to pick a module."""
     uid = message.from_user.id
     register_user(uid)
-    bot.send_message(uid, t(uid, "idle_file"), reply_markup=main_menu(uid))
+    bot.send_message(message.chat.id, t(uid, "idle_file"), reply_markup=main_menu(uid))
 
 # ============================================================================
-#  🌐 FLASK KEEP-ALIVE WEB SERVER  (Render Dynamic Port Fix Added)
+#  🌐 FLASK KEEP-ALIVE WEB SERVER  (24/7 background daemon thread)
 # ============================================================================
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def home():
-    return "💎✨ VCF Pro Bot is alive and running 24/7 with Premium HTML Custom Emojis! 🚀"
+    return "💎✨ VCF Pro Bot is alive and running 24/7! 🚀"
 
 @flask_app.route("/health")
 def health():
     return {"status": "ok", "time": time.time()}
 
 def run_flask():
-    # Fix Integrated: Correctly binds to Render's injected dynamic $PORT environment variable.
+    # Render injects a dynamic $PORT and health-checks against it; honor it.
+    # Falls back to 8080 for local runs / other hosts.
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host="0.0.0.0", port=port)
 
@@ -1438,7 +1422,36 @@ def set_default_commands():
         log.warning("Could not set commands: %s", e)
 
 if __name__ == "__main__":
+    # --- Fail fast if the token is missing/placeholder (the #1 "no response" cause) ---
+    if not BOT_TOKEN or BOT_TOKEN == "PUT-YOUR-BOT-TOKEN-HERE":
+        raise SystemExit(
+            "\n❌ BOT_TOKEN is not set!\n"
+            "   Add an environment variable named BOT_TOKEN with the token from @BotFather,\n"
+            "   then restart / redeploy. The bot cannot poll Telegram without it.\n"
+        )
+
+    # Start the Flask keep-alive web server (binds Render's $PORT, or 8080 locally).
     keep_alive()
+
+    # CRITICAL FIX: a previously-set webhook silently blocks getUpdates polling, so the
+    # bot would receive NOTHING from Telegram — this is the usual reason /start gets no
+    # reply at all. Always clear any existing webhook BEFORE we start long-polling.
+    try:
+        bot.remove_webhook()
+        time.sleep(0.5)
+        log.info("Webhook cleared — switching to long-polling.")
+    except Exception as e:
+        log.warning("remove_webhook failed (continuing anyway): %s", e)
+
     set_default_commands()
     log.info("💎 VCF Pro Bot (HTML + Animated Emoji) starting (polling)...")
-    bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+
+    # Resilient 24/7 polling loop. infinity_polling already auto-recovers from
+    # transient network errors; this outer guard ensures that even a fatal escape
+    # never kills the process silently — it logs and restarts after a short pause.
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+        except Exception as e:
+            log.error("Polling crashed — restarting in 5s: %s", e)
+            time.sleep(5)
