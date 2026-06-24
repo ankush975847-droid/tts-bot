@@ -1,1554 +1,1668 @@
-# ============================================================================
-#  💎 VCF MANAGEMENT TOOL — Premium Telegram Bot (HTML + ANIMATED EMOJI)
-#  Library : pyTelegramBotAPI (telebot)  +  Flask (keep-alive)
-#  UI      : parse_mode="HTML" + <tg-emoji> Premium animated custom emojis
-#  Core    : Thread-Safe (RLock/Lock) / Anti-Loop Gatekeeper / i18n / 24-7
-# ----------------------------------------------------------------------------
-#  pip install pyTelegramBotAPI flask openpyxl
-# ============================================================================
-
+import telebot
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import re
-import io
-import time
-import uuid
-import random
 import threading
-import logging
-from html import escape
-
-import telebot
-from telebot import types
+import time
 from flask import Flask
+import logging
+import random
+import warnings
+import uuid
+import io
+import copy
 
-# openpyxl is only needed for .xlsx parsing; import lazily-safe
+FILE_LOCK = threading.Lock()  # Prevents race conditions on users.txt
+DATA_LOCK = threading.Lock()  # Protects all per-user session dictionaries
+
+# ── Core Level Fixes & Requirements ──────────────────────────────────────────
+os.environ['OPENPYXL_LXML'] = 'False'
+warnings.filterwarnings("ignore", category=UserWarning)
+
 try:
     import openpyxl
-    OPENPYXL_OK = True
-except Exception:
-    OPENPYXL_OK = False
+except ImportError:
+    import sys
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+    import openpyxl
 
-# ============================================================================
-#  🔧 CONFIGURATION
-# ============================================================================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+# ── Settings ──────────────────────────────────────────────────────────────────
+TOKEN   = os.environ.get('TOKEN')
+ADMIN_ID = int(os.environ.get('ADMIN_ID', 8632094892))
+DEFAULT_SPLIT_LIMIT = 200   # Internal default for Admin/Navy module ONLY
 
-def _parse_admin_ids(raw):
-    """Robustly parse comma/space separated admin IDs; never crash on bad input."""
-    ids = set()
-    for chunk in re.split(r"[,\s]+", raw or ""):
-        chunk = chunk.strip()
-        if chunk.lstrip("-").isdigit():
-            ids.add(int(chunk))
-    return ids
+bot = telebot.TeleBot(TOKEN, threaded=True)
+user_data     = {}   # keyed by chat_id (int)
+user_langs    = {}   # keyed by chat_id (int)
+merge_storage = {}   # keyed by chat_id (int)
+user_captions = {}   # keyed by chat_id (int) — unused externally; kept for /caption toggle
 
-ADMIN_IDS = _parse_admin_ids(os.environ.get("ADMIN_IDS", ""))
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
-# Hidden global constant — Admin/Navy mode ALWAYS splits at exactly 200.
-ADMIN_NAVY_SPLIT = 200
+app = Flask('')
 
-# Default split bounds for Normal mode (200–250 margin).
-DEFAULT_SPLIT_MIN = 200
-DEFAULT_SPLIT_MAX = 250
+@app.route('/')
+def home():
+    return "VCF Bot Continuous Full Framework Live!"
 
-# Working directory for transient files (always cleaned up in finally blocks).
-TMP_DIR = "tmp_vcf"
-os.makedirs(TMP_DIR, exist_ok=True)
-
-# Thread-locked user registry file (for /stats and /broadcast).
-USERS_FILE = "users.txt"
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-log = logging.getLogger("vcf-bot")
-
-# GLOBAL HTML PARSE MODE — required for <tg-emoji> animated custom emojis.
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True)
-
-# ============================================================================
-#  ✨ PREMIUM ANIMATED CUSTOM EMOJI ENGINE
-# ============================================================================
-# Telegram Premium "live" emojis render via:  <tg-emoji emoji-id="ID">😀</tg-emoji>
-#   - emoji-id MUST be a real custom_emoji_id your bot can access (from a pack
-#     owned by you / available to the bot). Replace the placeholders below.
-#   - The fallback glyph inside the tag is what NON-premium users see.
-#   - If USE_CUSTOM_EMOJI is False, only fallback glyphs are sent (100% safe,
-#     no API errors). Flip to True once you have filled in valid IDs.
-USE_CUSTOM_EMOJI = os.environ.get("USE_CUSTOM_EMOJI", "0").strip().lower() in ("1", "true", "yes", "on")
-
-CUSTOM_EMOJI = {
-    # name      : (emoji_id_PLACEHOLDER, fallback_glyph)
-    "diamond":   ("5377306342157541845", "💎"),
-    "sparkle":   ("5377534935414753930", "✨"),
-    "rocket":    ("5377498341074542641", "🚀"),
-    "party":     ("5377434631194316169", "🎉"),
-    "point":     ("5377331076020888459", "👇"),
-    "warn":      ("5377299288301819298", "⚠️"),
-    "stop":      ("5377268910860627479", "🛑"),
-    "lock":      ("5377246106062577165", "🔒"),
-    "check":     ("5377208966707527415", "✅"),
-    "cross":     ("5377184978546879619", "❌"),
-    "gear":      ("5377158923245343476", "⚙️"),
-    "fire":      ("5377134138959566379", "🔥"),
-    "hourglass": ("5377104918607097490", "⏳"),
-    "folder":    ("5377079275337052382", "📁"),
-    "magnify":   ("5377055054925953019", "🔍"),
-    "link":      ("5377027934447741383", "🔗"),
-    "scissors":  ("5377003969515497632", "✂️"),
-    "inbox":     ("5376982692879045308", "📥"),
-    "outbox":    ("5376957494365685254", "📤"),
-    "label":     ("5376931877657653766", "🏷️"),
-    "person":    ("5376908359683988012", "👤"),
-    "phone":     ("5376882959429877423", "📞"),
-    "crown":     ("5376853657290797294", "👑"),
-    "anchor":    ("5376826957243722385", "⚓"),
-    "globe":     ("5376803085928570679", "🌐"),
-    "chart":     ("5376775457271083190", "📊"),
-    "mega":      ("5376749742456321653", "📢"),
-    "pingpong":  ("5376723519564243966", "🏓"),
-    "back":      ("5376698547437166897", "⏭️"),
-    "card":      ("5376672819021922488", "📇"),
-    "page":      ("5376646090605173489", "📄"),
-    "home":      ("5376619362189424490", "🏠"),
-    "bolt":      ("5376592633773675491", "⚡"),
-    "boom":      ("5376565905357926492", "💥"),
-    "blue":      ("5376539176942177493", "💙"),
-    "green":     ("5376512448526428494", "🟢"),
-    "red":       ("5376485720110679495", "🔴"),
-    "star":      ("5376458991694930496", "⭐"),
-    "number":    ("5376432263279181497", "🔢"),
-    "company":   ("5376405534863432498", "🏢"),
-    "plus":      ("5376378806447683499", "➕"),
-    "mute":      ("5376352078031934500", "🤐"),
-    "speech":    ("5376325349616185501", "💬"),
-    "diamond2":  ("5376298621200000000", "💠"),
-    "target":    ("5376271892773456789", "🎯"),
-    "empty":     ("5376245164346913580", "📭"),
-    "clip":      ("5376218435920370371", "📎"),
-    "signal":    ("5376191707493827162", "📡"),
-    "medal":     ("5376164979067283953", "🥇"),
-    "flag":      ("5376138250640740744", "🏁"),
-    "eyes":      ("5376111522214197535", "👀"),
-    "bulb":      ("5376084793787654326", "💡"),
-}
-
-def ce(name):
-    """Return a premium animated <tg-emoji> tag (or its safe fallback glyph)."""
-    eid, fb = CUSTOM_EMOJI.get(name, ("", "✨"))
-    if USE_CUSTOM_EMOJI and eid:
-        return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
-    return fb
-
-# ----------------------------------------------------------------------------
-#  🛟 SAFETY NET: never let an invalid custom-emoji ID silence the bot.
-#  If USE_CUSTOM_EMOJI=1 but any custom_emoji_id is invalid/inaccessible,
-#  Telegram rejects the WHOLE message (error: EMOJI_INVALID) — which makes even
-#  /start appear dead. We transparently strip the <tg-emoji> tags (keeping the
-#  fallback glyph) and retry, so messages ALWAYS get delivered no matter what.
-# ----------------------------------------------------------------------------
-_TG_EMOJI_RE = re.compile(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', re.DOTALL)
-_HTML_TAG_RE = re.compile(r'<[^>]+>')
-_orig_send_message = bot.send_message
-
-def _safe_send_message(chat_id, text, **kwargs):
-    try:
-        return _orig_send_message(chat_id, text, **kwargs)
-    except Exception as e:
-        emsg = str(e).lower()
-        if any(k in emsg for k in ("emoji", "entities", "custom_emoji", "parse")):
-            # 1st fallback: drop custom-emoji tags, keep glyphs + remaining HTML.
-            try:
-                return _orig_send_message(chat_id, _TG_EMOJI_RE.sub(r'\1', text), **kwargs)
-            except Exception:
-                # 2nd fallback: strip ALL HTML and send as plain text.
-                kw = dict(kwargs)
-                kw["parse_mode"] = None
-                plain = _HTML_TAG_RE.sub('', _TG_EMOJI_RE.sub(r'\1', text))
-                return _orig_send_message(chat_id, plain, **kw)
-        raise
-
-# Route every bot.send_message(...) through the safety net.
-bot.send_message = _safe_send_message
-
-# ============================================================================
-#  🔐 THREAD-SAFETY PRIMITIVES
-# ============================================================================
-SESSION_LOCK = threading.RLock()   # protects the per-user session dictionary
-USERS_LOCK = threading.Lock()      # protects users.txt read/write
-
-# Per-user volatile state: { user_id: { "data": {...}, "lang": "en", "caption": True } }
-SESSIONS = {}
-
-def get_session(uid):
-    """Return (create if needed) the session for a user. Thread-safe."""
-    with SESSION_LOCK:
-        if uid not in SESSIONS:
-            SESSIONS[uid] = {"data": {}, "lang": "en", "caption": True}
-        return SESSIONS[uid]
-
-def reset_user_data(uid):
-    """Atomically wipe a user's active conversational data (keeps lang/caption)."""
-    with SESSION_LOCK:
-        s = SESSIONS.get(uid)
-        if s:
-            s["data"] = {}
-
-def get_lang(uid):
-    with SESSION_LOCK:
-        return SESSIONS.get(uid, {}).get("lang", "en")
-
-# ============================================================================
-#  🌐 INTERNATIONALIZATION (en / hi / zh)  — button labels (plain text only)
-# ============================================================================
-# NOTE: Inline button text does NOT support HTML or custom emoji; only the
-# message BODY does. So buttons use plain Unicode glyphs.
-BTN = {
-    "text_to_vcf":  {"en": "📄 Text to VCF",   "hi": "📄 टेक्स्ट से VCF", "zh": "📄 文本转VCF"},
-    "vcf_to_text":  {"en": "📇 VCF to Text",   "hi": "📇 VCF से टेक्स्ट", "zh": "📇 VCF转文本"},
-    "admin_navy":   {"en": "👑 Admin/Navy VCF","hi": "👑 एडमिन/नेवी VCF","zh": "👑 管理/海军VCF"},
-    "vcf_editor":   {"en": "✏️ VCF Editor",    "hi": "✏️ VCF एडिटर",      "zh": "✏️ VCF编辑器"},
-    "merge_file":   {"en": "🔗 Merge File",    "hi": "🔗 फ़ाइल मर्ज",      "zh": "🔗 合并文件"},
-    "split_file":   {"en": "✂️ Split File",    "hi": "✂️ फ़ाइल विभाजन",    "zh": "✂️ 拆分文件"},
-    "rename_file":  {"en": "⚙️ Rename File",   "hi": "⚙️ नाम बदलें",       "zh": "⚙️ 重命名文件"},
-    "get_details":  {"en": "🔍 Get VCF Details","hi": "🔍 VCF विवरण",      "zh": "🔍 VCF详情"},
-    "language":     {"en": "🌐 Language",      "hi": "🌐 भाषा",            "zh": "🌐 语言"},
-    "done":         {"en": "✅ Done & Merge",   "hi": "✅ पूर्ण और मर्ज",  "zh": "✅ 完成并合并"},
-    "home":         {"en": "🏠 Main Menu",     "hi": "🏠 मुख्य मेनू",      "zh": "🏠 主菜单"},
-}
-
-# ----------------------------------------------------------------------------
-#  All UI strings — valid HTML, with premium animated emojis via ce().
-#  Dynamic values use [[TOKEN]] sentinels (brace-free), filled by t() at runtime.
-# ----------------------------------------------------------------------------
-TXT = {
-    "welcome": {
-        "en": f"{ce('sparkle')}{ce('diamond')} <b>Welcome to VCF Pro Manager!</b> {ce('diamond')}{ce('sparkle')}\n\n{ce('rocket')} Your all-in-one premium contact toolkit.\n{ce('point')} Tap an action from the dazzling menu below:",
-        "hi": f"{ce('sparkle')}{ce('diamond')} <b>VCF प्रो मैनेजर में आपका स्वागत है!</b> {ce('diamond')}{ce('sparkle')}\n\n{ce('rocket')} आपका ऑल-इन-वन प्रीमियम कॉन्टैक्ट टूलकिट।\n{ce('point')} नीचे दिए गए मेनू से एक एक्शन चुनें:",
-        "zh": f"{ce('sparkle')}{ce('diamond')} <b>欢迎使用 VCF 专业管理器！</b> {ce('diamond')}{ce('sparkle')}\n\n{ce('rocket')} 您的一站式高级通讯录工具箱。\n{ce('point')} 请从下方炫彩菜单轻点操作：",
-    },
-    "help": {
-        "en": (f"📖 <b>VCF Pro — Help</b>\n\n"
-               f"{ce('page')} <b>Text to VCF</b> — numbers/.txt/.xlsx to split VCF files\n"
-               f"{ce('card')} <b>VCF to Text</b> — extract clean numbers\n"
-               f"{ce('crown')} <b>Admin/Navy VCF</b> — dual-mode, auto-split @200\n"
-               f"{ce('scissors')} <b>Split File</b> — break a big VCF into parts\n"
-               f"{ce('link')} <b>Merge File</b> — combine many files into one VCF\n"
-               f"{ce('gear')} <b>Rename File</b> — instant rename, keeps extension\n"
-               f"{ce('magnify')} <b>Get VCF Details</b> — audit report + full log\n\n"
-               f"🎛 <b>Commands:</b> /start /help /cancel /done /skip /caption /ping /stats /broadcast"),
-        "hi": (f"📖 <b>VCF प्रो — मदद</b>\n\n"
-               f"{ce('page')} <b>टेक्स्ट से VCF</b> — नंबर/.txt/.xlsx ➔ VCF फ़ाइलें\n"
-               f"{ce('card')} <b>VCF से टेक्स्ट</b> — साफ़ नंबर निकालें\n"
-               f"{ce('crown')} <b>एडमिन/नेवी VCF</b> — डुअल-मोड, ऑटो-स्प्लिट @200\n"
-               f"{ce('scissors')} <b>फ़ाइल विभाजन</b> — बड़ी VCF को भागों में बाँटें\n"
-               f"{ce('link')} <b>फ़ाइल मर्ज</b> — कई फ़ाइलें एक में जोड़ें\n"
-               f"{ce('gear')} <b>नाम बदलें</b> — तुरंत रीनेम\n"
-               f"{ce('magnify')} <b>VCF विवरण</b> — ऑडिट रिपोर्ट + लॉग\n\n"
-               f"🎛 <b>कमांड:</b> /start /help /cancel /done /skip /caption /ping /stats /broadcast"),
-        "zh": (f"📖 <b>VCF 专业版 — 帮助</b>\n\n"
-               f"{ce('page')} <b>文本转VCF</b> — 号码/.txt/.xlsx ➔ VCF 文件\n"
-               f"{ce('card')} <b>VCF转文本</b> — 提取纯净号码\n"
-               f"{ce('crown')} <b>管理/海军VCF</b> — 双模式，自动按200拆分\n"
-               f"{ce('scissors')} <b>拆分文件</b> — 将大 VCF 拆成多份\n"
-               f"{ce('link')} <b>合并文件</b> — 多文件合并为一个 VCF\n"
-               f"{ce('gear')} <b>重命名文件</b> — 即时改名\n"
-               f"{ce('magnify')} <b>VCF详情</b> — 审计报告 + 日志\n\n"
-               f"🎛 <b>命令:</b> /start /help /cancel /done /skip /caption /ping /stats /broadcast"),
-    },
-    "cancelled": {
-        "en": f"{ce('stop')}{ce('sparkle')} <b>Operation cancelled.</b> Back to the main menu! {ce('home')}",
-        "hi": f"{ce('stop')}{ce('sparkle')} <b>ऑपरेशन रद्द किया गया.</b> मुख्य मेनू पर वापस! {ce('home')}",
-        "zh": f"{ce('stop')}{ce('sparkle')} <b>操作已取消。</b> 返回主菜单！{ce('home')}",
-    },
-    "choose_lang": {
-        "en": f"{ce('globe')}{ce('sparkle')} <b>Choose your language:</b>",
-        "hi": f"{ce('globe')}{ce('sparkle')} <b>अपनी भाषा चुनें:</b>",
-        "zh": f"{ce('globe')}{ce('sparkle')} <b>请选择语言：</b>",
-    },
-    "lang_set": {
-        "en": f"{ce('check')}🇬🇧 Language set to <b>English</b>!",
-        "hi": f"{ce('check')}🇮🇳 भाषा <b>हिन्दी</b> पर सेट!",
-        "zh": f"{ce('check')}🇨🇳 语言已设为 <b>简体中文</b>！",
-    },
-    "send_input_numbers": {
-        "en": f"{ce('inbox')}{ce('sparkle')} <b>Send me your contacts!</b>\n\nPaste numbers directly, or upload a <code>.txt</code> / <code>.xlsx</code> file. {ce('page')}",
-        "hi": f"{ce('inbox')}{ce('sparkle')} <b>अपने कॉन्टैक्ट भेजें!</b>\n\nनंबर पेस्ट करें, या <code>.txt</code> / <code>.xlsx</code> फ़ाइल अपलोड करें। {ce('page')}",
-        "zh": f"{ce('inbox')}{ce('sparkle')} <b>发送您的联系人！</b>\n\n直接粘贴号码，或上传 <code>.txt</code> / <code>.xlsx</code> 文件。{ce('page')}",
-    },
-    "no_numbers": {
-        "en": f"{ce('warn')} No valid numbers (min 7 digits) found. Try again!",
-        "hi": f"{ce('warn')} कोई मान्य नंबर (न्यूनतम 7 अंक) नहीं मिला। पुनः प्रयास करें!",
-        "zh": f"{ce('warn')} 未找到有效号码（至少7位）。请重试！",
-    },
-    "found_numbers": {
-        "en": f"{ce('check')}{ce('party')} Found <b>[[N]]</b> unique numbers!",
-        "hi": f"{ce('check')}{ce('party')} <b>[[N]]</b> अद्वितीय नंबर मिले!",
-        "zh": f"{ce('check')}{ce('party')} 找到 <b>[[N]]</b> 个唯一号码！",
-    },
-    "ask_vcf_name": {
-        "en": f"{ce('label')}{ce('sparkle')} <b>Step 1:</b> Enter the <b>VCF file name</b> (no extension):",
-        "hi": f"{ce('label')}{ce('sparkle')} <b>चरण 1:</b> <b>VCF फ़ाइल नाम</b> दर्ज करें (बिना एक्सटेंशन):",
-        "zh": f"{ce('label')}{ce('sparkle')} <b>第1步:</b> 输入 <b>VCF 文件名</b>（不含后缀）：",
-    },
-    "ask_prefix": {
-        "en": f"{ce('person')}{ce('diamond2')} <b>Step 2:</b> Enter the <b>contact prefix name</b> (e.g. <code>Member</code>):",
-        "hi": f"{ce('person')}{ce('diamond2')} <b>चरण 2:</b> <b>कॉन्टैक्ट प्रीफ़िक्स नाम</b> दर्ज करें (जैसे <code>Member</code>):",
-        "zh": f"{ce('person')}{ce('diamond2')} <b>第2步:</b> 输入 <b>联系人前缀名</b>（如 <code>Member</code>）：",
-    },
-    "ask_company": {
-        "en": f"{ce('company')}💼 <b>Step 3:</b> Enter a <b>company name</b>, or type /skip:",
-        "hi": f"{ce('company')}💼 <b>चरण 3:</b> <b>कंपनी का नाम</b> दर्ज करें, या /skip टाइप करें:",
-        "zh": f"{ce('company')}💼 <b>第3步:</b> 输入 <b>公司名称</b>，或输入 /skip：",
-    },
-    "ask_start_index": {
-        "en": f"{ce('number')}{ce('star')} <b>Step 4:</b> Enter the <b>file starting index number</b> (e.g. <code>1</code>):",
-        "hi": f"{ce('number')}{ce('star')} <b>चरण 4:</b> <b>फ़ाइल प्रारंभिक इंडेक्स नंबर</b> दर्ज करें (जैसे <code>1</code>):",
-        "zh": f"{ce('number')}{ce('star')} <b>第4步:</b> 输入 <b>文件起始序号</b>（如 <code>1</code>）：",
-    },
-    "ask_split": {
-        "en": f"{ce('scissors')}{ce('target')} <b>Step 5:</b> Enter <b>contacts per file</b> ([[MN]]–[[MX]]):",
-        "hi": f"{ce('scissors')}{ce('target')} <b>चरण 5:</b> <b>प्रति फ़ाइल कॉन्टैक्ट</b> दर्ज करें ([[MN]]–[[MX]]):",
-        "zh": f"{ce('scissors')}{ce('target')} <b>第5步:</b> 输入 <b>每个文件的联系人数</b>（mn–mx）：",
-    },
-    "bad_number": {
-        "en": f"{ce('warn')} Please send a valid number. Try again!",
-        "hi": f"{ce('warn')} कृपया मान्य संख्या भेजें। पुनः प्रयास करें!",
-        "zh": f"{ce('warn')} 请输入有效数字。请重试！",
-    },
-    "building": {
-        "en": f"{ce('gear')}{ce('fire')} <b>Building your VCF files...</b> Please wait! {ce('hourglass')}",
-        "hi": f"{ce('gear')}{ce('fire')} <b>आपकी VCF फ़ाइलें बन रही हैं...</b> कृपया प्रतीक्षा करें! {ce('hourglass')}",
-        "zh": f"{ce('gear')}{ce('fire')} <b>正在生成您的 VCF 文件...</b> 请稍候！{ce('hourglass')}",
-    },
-    "done_files": {
-        "en": f"{ce('party')}{ce('diamond')} <b>All done!</b> Sent <b>[[N]]</b> file(s) with <b>[[C]]</b> contacts. {ce('rocket')}",
-        "hi": f"{ce('party')}{ce('diamond')} <b>सब हो गया!</b> <b>[[C]]</b> कॉन्टैक्ट के साथ <b>[[N]]</b> फ़ाइल भेजी। {ce('rocket')}",
-        "zh": f"{ce('party')}{ce('diamond')} <b>全部完成！</b> 已发送 <b>[[N]]</b> 个文件，共 <b>[[C]]</b> 个联系人。{ce('rocket')}",
-    },
-    "send_vcf": {
-        "en": f"{ce('outbox')}{ce('card')} <b>Send me a <code>.vcf</code> file</b> to process. {ce('sparkle')}",
-        "hi": f"{ce('outbox')}{ce('card')} प्रोसेस के लिए <b>एक <code>.vcf</code> फ़ाइल भेजें</b>। {ce('sparkle')}",
-        "zh": f"{ce('outbox')}{ce('card')} <b>请发送一个 <code>.vcf</code> 文件</b> 进行处理。{ce('sparkle')}",
-    },
-    "not_vcf": {
-        "en": f"{ce('warn')} That's not a <code>.vcf</code> file. Please send a valid VCF!",
-        "hi": f"{ce('warn')} यह <code>.vcf</code> फ़ाइल नहीं है। कृपया मान्य VCF भेजें!",
-        "zh": f"{ce('warn')} 这不是 <code>.vcf</code> 文件。请发送有效的 VCF！",
-    },
-    "ask_basename": {
-        "en": f"{ce('label')}{ce('sparkle')} Enter a <b>new base name</b> for the output files:",
-        "hi": f"{ce('label')}{ce('sparkle')} आउटपुट फ़ाइलों के लिए <b>नया बेस नाम</b> दर्ज करें:",
-        "zh": f"{ce('label')}{ce('sparkle')} 为输出文件输入 <b>新的基础名称</b>：",
-    },
-    "merge_collect": {
-        "en": f"{ce('link')}{ce('sparkle')} <b>Merge mode active!</b>\n\nSend <code>.vcf</code> / <code>.txt</code> files one-by-one. When finished, tap <b>✅ Done & Merge</b> below or send /done.",
-        "hi": f"{ce('link')}{ce('sparkle')} <b>मर्ज मोड सक्रिय!</b>\n\n<code>.vcf</code> / <code>.txt</code> फ़ाइलें एक-एक भेजें। पूर्ण होने पर नीचे <b>✅ पूर्ण और मर्ज</b> दबाएँ या /done भेजें।",
-        "zh": f"{ce('link')}{ce('sparkle')} <b>合并模式已开启！</b>\n\n逐个发送 <code>.vcf</code> / <code>.txt</code> 文件。完成后点击下方 <b>✅ 完成并合并</b> 或发送 /done。",
-    },
-    "merge_added": {
-        "en": f"{ce('plus')}{ce('check')} Added to queue! Total files: <b>[[N]]</b>. Send more or tap <b>✅ Done & Merge</b>.",
-        "hi": f"{ce('plus')}{ce('check')} कतार में जोड़ा गया! कुल फ़ाइलें: <b>[[N]]</b>. और भेजें या <b>✅ पूर्ण और मर्ज</b> दबाएँ।",
-        "zh": f"{ce('plus')}{ce('check')} 已加入队列！文件总数：<b>[[N]]</b>。继续发送或点击 <b>✅ 完成并合并</b>。",
-    },
-    "merge_empty": {
-        "en": f"{ce('warn')}{ce('empty')} Your merge queue is empty. Send some files first!",
-        "hi": f"{ce('warn')}{ce('empty')} आपकी मर्ज कतार खाली है। पहले कुछ फ़ाइलें भेजें!",
-        "zh": f"{ce('warn')}{ce('empty')} 合并队列为空。请先发送文件！",
-    },
-    "rename_send": {
-        "en": f"{ce('gear')}{ce('clip')} <b>Send me ANY file</b> you want to rename. {ce('sparkle')}",
-        "hi": f"{ce('gear')}{ce('clip')} जिस फ़ाइल का नाम बदलना है <b>वह भेजें</b>। {ce('sparkle')}",
-        "zh": f"{ce('gear')}{ce('clip')} <b>发送任意文件</b> 以重命名。{ce('sparkle')}",
-    },
-    "rename_ask": {
-        "en": f"{ce('label')}{ce('sparkle')} Enter the <b>new name</b> (extension is kept automatically):",
-        "hi": f"{ce('label')}{ce('sparkle')} <b>नया नाम</b> दर्ज करें (एक्सटेंशन स्वतः रहेगा):",
-        "zh": f"{ce('label')}{ce('sparkle')} 输入 <b>新名称</b>（后缀自动保留）：",
-    },
-    "caption_on":  {"en": f"{ce('green')} Captions <b>enabled</b>. {ce('speech')}", "hi": f"{ce('green')} कैप्शन <b>चालू</b>. {ce('speech')}", "zh": f"{ce('green')} 标题已 <b>开启</b>。{ce('speech')}"},
-    "caption_off": {"en": f"{ce('red')} Captions <b>disabled</b>. {ce('mute')}", "hi": f"{ce('red')} कैप्शन <b>बंद</b>. {ce('mute')}", "zh": f"{ce('red')} 标题已 <b>关闭</b>。{ce('mute')}"},
-    "admin_only":  {"en": f"{ce('cross')}{ce('lock')} Admins only!", "hi": f"{ce('cross')}{ce('lock')} केवल एडमिन!", "zh": f"{ce('cross')}{ce('lock')} 仅限管理员！"},
-    "stats": {
-        "en": f"{ce('chart')}{ce('diamond')} <b>Bot Stats</b>\n\n{ce('person')} Registered users: <b>[[U]]</b>\n{ce('green')} Active sessions: <b>[[S]]</b>",
-        "hi": f"{ce('chart')}{ce('diamond')} <b>बॉट आँकड़े</b>\n\n{ce('person')} पंजीकृत उपयोगकर्ता: <b>[[U]]</b>\n{ce('green')} सक्रिय सत्र: <b>[[S]]</b>",
-        "zh": f"{ce('chart')}{ce('diamond')} <b>机器人统计</b>\n\n{ce('person')} 注册用户：<b>[[U]]</b>\n{ce('green')} 活跃会话：<b>[[S]]</b>",
-    },
-    "broadcast_ask": {
-        "en": f"{ce('mega')}{ce('sparkle')} Send me the <b>message to broadcast</b> to all users:",
-        "hi": f"{ce('mega')}{ce('sparkle')} सभी उपयोगकर्ताओं को <b>प्रसारित करने का संदेश</b> भेजें:",
-        "zh": f"{ce('mega')}{ce('sparkle')} 发送要 <b>广播</b> 给所有用户的消息：",
-    },
-    "broadcast_done": {
-        "en": f"{ce('mega')}{ce('check')} <b>Broadcast complete!</b>\n\n{ce('check')} Sent: <b>[[OK]]</b>\n{ce('cross')} Failed: <b>[[FAIL]]</b>",
-        "hi": f"{ce('mega')}{ce('check')} <b>प्रसारण पूर्ण!</b>\n\n{ce('check')} भेजा: <b>[[OK]]</b>\n{ce('cross')} विफल: <b>[[FAIL]]</b>",
-        "zh": f"{ce('mega')}{ce('check')} <b>广播完成！</b>\n\n{ce('check')} 成功：<b>[[OK]]</b>\n{ce('cross')} 失败：<b>[[FAIL]]</b>",
-    },
-    "admin_collect_vip": {
-        "en": f"{ce('crown')}{ce('diamond2')} <b>Admin/Navy Mode!</b>\n\n<b>Step 1:</b> Send <b>VIP/Admin numbers</b> (paste or file), or /skip:",
-        "hi": f"{ce('crown')}{ce('diamond2')} <b>एडमिन/नेवी मोड!</b>\n\n<b>चरण 1:</b> <b>VIP/एडमिन नंबर</b> भेजें, या /skip:",
-        "zh": f"{ce('crown')}{ce('diamond2')} <b>管理/海军模式！</b>\n\n<b>第1步:</b> 发送 <b>VIP/管理号码</b>，或 /skip：",
-    },
-    "admin_vip_prefix": {
-        "en": f"{ce('person')}{ce('crown')} Enter the <b>VIP/Admin prefix name</b>:",
-        "hi": f"{ce('person')}{ce('crown')} <b>VIP/एडमिन प्रीफ़िक्स नाम</b> दर्ज करें:",
-        "zh": f"{ce('person')}{ce('crown')} 输入 <b>VIP/管理前缀名</b>：",
-    },
-    "admin_collect_navy": {
-        "en": f"{ce('anchor')}{ce('blue')} <b>Step 2:</b> Now send the <b>Navy numbers</b> (paste or file):",
-        "hi": f"{ce('anchor')}{ce('blue')} <b>चरण 2:</b> अब <b>नेवी नंबर</b> भेजें:",
-        "zh": f"{ce('anchor')}{ce('blue')} <b>第2步:</b> 现在发送 <b>海军号码</b>：",
-    },
-    "admin_navy_prefix": {
-        "en": f"{ce('person')}{ce('anchor')} Enter the <b>Navy prefix name</b>:",
-        "hi": f"{ce('person')}{ce('anchor')} <b>नेवी प्रीफ़िक्स नाम</b> दर्ज करें:",
-        "zh": f"{ce('person')}{ce('anchor')} 输入 <b>海军前缀名</b>：",
-    },
-    "ask_outfile": {
-        "en": f"{ce('label')}{ce('sparkle')} Enter the <b>final output filename</b>:",
-        "hi": f"{ce('label')}{ce('sparkle')} <b>अंतिम आउटपुट फ़ाइल नाम</b> दर्ज करें:",
-        "zh": f"{ce('label')}{ce('sparkle')} 输入 <b>最终输出文件名</b>：",
-    },
-    "generic_error": {
-        "en": f"{ce('boom')} Something went wrong: <code>[[E]]</code>\nPlease /start again.",
-        "hi": f"{ce('boom')} कुछ गड़बड़ हो गई: <code>[[E]]</code>\nकृपया फिर से /start करें।",
-        "zh": f"{ce('boom')} 出错了：<code>[[E]]</code>\n请重新 /start。",
-    },
-    "menu_hint": {
-        "en": f"{ce('bulb')}{ce('sparkle')} Tap an option from the premium menu below {ce('point')}",
-        "hi": f"{ce('bulb')}{ce('sparkle')} नीचे प्रीमियम मेनू से एक विकल्प चुनें {ce('point')}",
-        "zh": f"{ce('bulb')}{ce('sparkle')} 请从下方高级菜单选择一项 {ce('point')}",
-    },
-    "idle_file": {
-        "en": f"{ce('inbox')}{ce('sparkle')} Pick a module from the menu first, then send your file! {ce('point')}",
-        "hi": f"{ce('inbox')}{ce('sparkle')} पहले मेनू से एक मॉड्यूल चुनें, फिर फ़ाइल भेजें! {ce('point')}",
-        "zh": f"{ce('inbox')}{ce('sparkle')} 请先从菜单选择模块，然后发送文件！{ce('point')}",
-    },
-}
-
-def t(uid, key, **kw):
-    """Translate a UI string for a user; fills [[TOKEN]] sentinels at runtime."""
-    lang = get_lang(uid)
-    template = TXT.get(key, {}).get(lang) or TXT.get(key, {}).get("en", key)
-    for k, v in kw.items():
-        template = template.replace("[[" + k.upper() + "]]", str(v))
-    return template
-
-# ============================================================================
-#  ⌨️ DYNAMIC INLINE KEYBOARDS
-# ============================================================================
-def _ib(uid, key):
-    """Build a single inline menu button -> callback_data 'menu:<key>'."""
-    lang = get_lang(uid)
-    return types.InlineKeyboardButton(BTN[key][lang], callback_data=f"menu:{key}")
-
-def main_menu(uid):
-    """
-    Dynamic premium InlineKeyboardMarkup main menu.
-    Layout:
-      Row 1: 📄 Text to VCF      | 📇 VCF to Text
-      Row 2: 👑 Admin/Navy VCF   | ✏️ VCF Editor
-      Row 3: 🔗 Merge File       | ✂️ Split File
-      Row 4: ⚙️ Rename File      | 🔍 Get VCF Details
-      Row 5: 🌐 Language Selection
-    """
-    kb = types.InlineKeyboardMarkup()
-    kb.row(_ib(uid, "text_to_vcf"), _ib(uid, "vcf_to_text"))
-    kb.row(_ib(uid, "admin_navy"),  _ib(uid, "vcf_editor"))
-    kb.row(_ib(uid, "merge_file"),  _ib(uid, "split_file"))
-    kb.row(_ib(uid, "rename_file"), _ib(uid, "get_details"))
-    kb.row(_ib(uid, "language"))
-    return kb
-
-def merge_menu(uid):
-    """Inline keyboard shown during merge collection (Done & Merge + Home)."""
-    lang = get_lang(uid)
-    kb = types.InlineKeyboardMarkup()
-    kb.row(types.InlineKeyboardButton(BTN["done"][lang], callback_data="merge:done"))
-    kb.row(types.InlineKeyboardButton(BTN["home"][lang], callback_data="menu:home"))
-    return kb
-
-def home_menu(uid):
-    """A small inline keyboard with just a Main Menu button (for step prompts)."""
-    lang = get_lang(uid)
-    kb = types.InlineKeyboardMarkup()
-    kb.row(types.InlineKeyboardButton(BTN["home"][lang], callback_data="menu:home"))
-    return kb
-
-def lang_menu():
-    kb = types.InlineKeyboardMarkup()
-    kb.row(
-        types.InlineKeyboardButton("🇬🇧 English", callback_data="lang:en"),
-        types.InlineKeyboardButton("🇮🇳 हिन्दी", callback_data="lang:hi"),
-        types.InlineKeyboardButton("🇨🇳 简体中文", callback_data="lang:zh"),
+threading.Thread(
+    target=lambda: app.run(
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 8080)),
+        debug=False,
+        use_reloader=False
     )
-    return kb
+).start()
 
-# ============================================================================
-#  🧰 CORE HELPERS  (parsing, VCF building, file I/O)
-# ============================================================================
-NUMBER_RE = re.compile(r'\+?\d[\d\-\s().]{5,}\d')   # loose grab, refined below
-VCARD_RE = re.compile(r'BEGIN:VCARD.*?END:VCARD', re.DOTALL | re.IGNORECASE)
-TEL_RE = re.compile(r'TEL[^:]*:([+\d\-\s().]+)', re.IGNORECASE)
-FN_RE = re.compile(r'^FN:(.*)$', re.IGNORECASE | re.MULTILINE)
 
-def extract_numbers(text):
-    """Extract valid phone numbers (min 7 digits) and de-duplicate, order-stable."""
-    found, seen = [], set()
-    for raw in NUMBER_RE.findall(text or ""):
-        digits = re.sub(r'\D', '', raw)
-        plus = raw.strip().startswith('+')
-        if len(digits) < 7:
-            continue
-        norm = ('+' + digits) if plus else digits
-        if norm not in seen:
-            seen.add(norm)
-            found.append(norm)
-    return found
+# ── Utility helpers ───────────────────────────────────────────────────────────
 
-def numbers_from_xlsx(path):
-    """Pull every cell value from an .xlsx and run number extraction over it."""
-    if not OPENPYXL_OK:
-        return []
-    chunks = []
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+def save_user(user_id):
     try:
-        for ws in wb.worksheets:
-            for row in ws.iter_rows(values_only=True):
-                for cell in row:
-                    if cell is not None:
-                        chunks.append(str(cell))
-    finally:
-        wb.close()
-    return extract_numbers(" ".join(chunks))
+        with FILE_LOCK:
+            if not os.path.exists("users.txt"):
+                open("users.txt", 'w').close()
+            with open("users.txt", "r") as f:
+                existing = f.read().splitlines()
+            if str(user_id) not in existing:
+                with open("users.txt", "a") as f:
+                    f.write(f"{user_id}\n")
+    except Exception as e:
+        logging.error(f"Error saving user: {e}")
 
-def build_vcards(numbers, prefix, company, start_index):
-    """Return a list of vCard 3.0 strings for the given numbers."""
-    cards = []
-    idx = start_index
-    for num in numbers:
-        name = f"{prefix} {idx}"
-        org = f"ORG:{company}\n" if company else ""
-        card = (
-            "BEGIN:VCARD\n"
-            "VERSION:3.0\n"
-            f"FN:{name}\n"
-            f"N:{name};;;;\n"
-            f"{org}"
-            f"TEL;TYPE=CELL:{num}\n"
-            "END:VCARD"
-        )
-        cards.append(card)
-        idx += 1
-    return cards
 
-def write_temp(content, suffix):
-    """Write text content to a uniquely-named temp file; return its path."""
-    path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{suffix}")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return path
+def escape_markdown(text):
+    if not text:
+        return ""
+    return re.sub(r'([_*\[\`])', r'\\\1', str(text))
 
-def safe_remove(path):
+
+def safe_delete_file(path):
+    """Safely delete a temp file, logging errors without raising."""
     try:
         if path and os.path.exists(path):
             os.remove(path)
     except Exception as e:
-        log.warning("Could not remove %s: %s", path, e)
+        logging.error(f"Failed to delete temp file {path}: {e}")
 
-def caption_for(uid, text):
-    """Return caption text only if the user has captions enabled."""
-    with SESSION_LOCK:
-        enabled = SESSIONS.get(uid, {}).get("caption", True)
-    return text if enabled else None
 
-def send_vcf_chunks(uid, chat_id, cards, base_name, per_file, start_part=1):
-    """Split a list of vCards into files of `per_file` and send each."""
-    total_files = 0
-    temp_paths = []
-    try:
-        part = start_part
-        for i in range(0, len(cards), per_file):
-            chunk = cards[i:i + per_file]
-            content = "\n".join(chunk) + "\n"
-            fname = f"{base_name}_{part}.vcf" if len(cards) > per_file else f"{base_name}.vcf"
-            path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}.vcf")
-            temp_paths.append(path)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            with open(path, "rb") as f:
-                bot.send_document(
-                    chat_id, f, visible_file_name=fname,
-                    caption=caption_for(uid, f"{ce('card')} <b>{escape(fname)}</b> — {len(chunk)} contacts {ce('diamond')}"),
-                )
-            total_files += 1
-            part += 1
-    finally:
-        for p in temp_paths:
-            safe_remove(p)
-    return total_files
+# ── Language Database (EN, HI, ZH) ───────────────────────────────────────────
+TEXTS = {
+    'en': {
+        'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>Welcome!</b> Choose an option from the menu below:",
+        'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nPlease send your <code>.txt</code> or <code>.xlsx</code> file, or <b>paste numbers</b> directly.\n\nType /cancel anytime to return to main menu.",
+        'scan_success':  "✅ **Collecting Contacts**\n🔍 Total Added: {count}\n\n1️⃣ Enter VCF file Name:",
+        'enter_prefix':  "2️⃣ Enter Contact Prefix Name:",
+        'enter_company': "3️⃣ Enter Company Name (or type 'skip'):",
+        'enter_split':   "5️⃣ How many contacts per VCF file?\n💡 *(Safe Margin: 200 - 250)*:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF Generation Completed Successfully!</b> 💯",
+        'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF to Text Module</b>\n\nPlease send your <code>.vcf</code> file.",
+        'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> Invalid input or file format. Please try again.",
+        'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> Please enter a valid positive number.",
+        'send_split_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Split File Module</b>\n\n📥 Upload ANY <code>.vcf</code> or <code>.txt</code> file to split into smaller parts...\n\n🔄 <b>Waiting for file...</b>",
+        'ask_split_limit':"🔢 Contacts per split file?:",
+        'send_merge_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Merge File Module</b>\n\n📥 Upload multiple <code>.vcf</code> or <code>.txt</code> files to merge them together...",
+        'merge_added':   "✅ File added! Queue: {count}\nSend next file or type /done to merge.",
+        'no_merge_files':"❌ Empty queue. Please send at least one `.vcf` file before typing /done.",
+        'merging':       "🔄 Merging...",
+        'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Editor Module</b>\n\nPlease send the <code>.vcf</code> file:",
+        'ask_new_prefix':"📝 Enter New Prefix Name:",
+        'cancelled':     "❌ Cancelled.",
+        'b_txt2vcf':     "📄 Text/Excel to VCF",
+        'b_vcf2txt':     "📇 VCF to Text",
+        'b_navy':        "👑 Admin/Navy VCF",
+        'b_editor':      "✏️ VCF Editor",
+        'b_merge':       "🔗 Merge File",
+        'b_split':       "✂️ Split File",
+        'b_rename':      "⚙️ Rename File",
+        'b_details':     "🔍 Get VCF Details",
+        'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Rename File Module</b>\n\n📥 Upload ANY file (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code>, etc.) to change its name instantly.\n\n🔄 <b>Waiting for file...</b>",
+        'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n📥 Upload a <code>.vcf</code> file to extract names and details...\n\n🔄 <b>Waiting for file...</b>"
+    },
+    'hi': {
+        'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>VCF Maker में स्वागत है!</b>\n\nनीचे दिए गए बटन्स में से एक option चुनें:",
+        'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nकृपया अपनी <code>.txt</code> या एक्सेल फ़ाइल भेजें, या सीधे चैट में नंबर पेस्ट करें।",
+        'scan_success':  "✅ **Collecting Contacts**\n🔍 कुल नंबर्स मिले: {count}\n\n1️⃣ जनरेट होने वाली VCF फ़ाइल का **नाम** दर्ज करें:",
+        'enter_prefix':  "2️⃣ कॉन्टैक्ट का **Prefix Name** दर्ज करें:",
+        'enter_company': "3️⃣ **कंपनी का नाम** दर्ज करें (या 'skip' लिखें):",
+        'enter_split':   "5️⃣ एक VCF फ़ाइल में **कितने कॉन्टैक्ट्स** रखने हैं?\n💡 *(व्हाट्सएप मार्केटिंग मार्जिन: 200 - 250)*:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF जनरेशन सफलतापूर्वक पूरा हुआ!</b> 💯",
+        'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF to Text Module</b>\n\nकृपया अपनी <code>.vcf</code> फ़ाइल भेजें।",
+        'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> गलत इनपुट या फ़ाइल फॉर्मेट। कृपया पुनः प्रयास करें।",
+        'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> कृपया एक सही और सकारात्मक संख्या (नंबर) दर्ज करें।",
+        'send_split_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Split File Module</b>\n\n📥 स्प्लिट करने के लिए कोई भी <code>.vcf</code> या <code>.txt</code> फ़ाइल अपलोड करें...\n\n🔄 <b>Waiting for file...</b>",
+        'ask_split_limit':"🔢 प्रत्येक स्प्लिट फ़ाइल में कितने कॉन्टैक्ट्स चाहिए?:",
+        'send_merge_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Merge File Module</b>\n\n📥 आपस में जोड़ने के लिए कई <code>.vcf</code> या <code>.txt</code> फ़ाइलें अपलोड करें...",
+        'merge_added':   "✅ फ़ाइल जुड़ गई! कुल: {count}\nअगली फ़ाइल भेजें या मर्ज करने के लिए /done लिखें।",
+        'no_merge_files':"❌ सूची खाली है। /done भेजने से पहले कृपया कम से कम एक `.vcf` फ़ाइल ज़रूर भेजें।",
+        'merging':       "🔄 फ़ाइलों को जोड़ा जा रहा है...",
+        'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Editor Module</b>\n\nकृपया <code>.vcf</code> फ़ाइल भेजें:",
+        'ask_new_prefix':"📝 नया प्रीफिक्स नाम दर्ज करें:",
+        'cancelled':     "❌ प्रक्रिया रद्द कर दी गई है।",
+        'b_txt2vcf':     "📄 टेक्स्ट/एक्सेल को VCF",
+        'b_vcf2txt':     "📇 VCF को टेक्स्ट बदलें",
+        'b_navy':        "👑 Admin/Navy VCF",
+        'b_editor':      "✏️ VCF एडिटर",
+        'b_merge':       "🔗 फाइल मर्ज करें",
+        'b_split':       "✂️ फाइल स्प्लिट करें",
+        'b_rename':      "⚙️ नाम बदलें",
+        'b_details':     "🔍 VCF विवरण प्राप्त करें",
+        'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Rename File Module</b>\n\n📥 नाम बदलने के लिए कोई भी फ़ाइल (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code>, आदि) अपलोड करें।\n\n🔄 <b>Waiting for file...</b>",
+        'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n📥 विवरण निकालने के लिए कोई भी <code>.vcf</code> फ़ाइल अपलोड करें...\n\n🔄 <b>Waiting for file...</b>"
+    },
+    'zh': {
+        'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>欢迎使用 VCF 生成器！</b> 请从下方菜单选择一个选项：",
+        'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>文本/Excel 转 VCF 模块</b>\n\n请发送您的 <code>.txt</code> 或 <code>.xlsx</code> 文件，或者直接<b>粘贴号码</b>。\n\n随时输入 /cancel 可返回主菜单。",
+        'scan_success':  "✅ **正在收集联系人**\n🔍 已添加总数: {count}\n\n1️⃣ 输入 VCF 文件名称:",
+        'enter_prefix':  "2️⃣ 输入联系人前缀名称:",
+        'enter_company': "3️⃣ 输入公司名称 (或输入 'skip' 跳过):",
+        'enter_split':   "5️⃣ 每个 VCF 文件包含多少个联系人？\n💡 *(安全范围: 200 - 250)*:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF 文件成功生成！</b> 💯",
+        'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 转 文本模块</b>\n\n请发送您的 <code>.vcf</code> 文件。",
+        'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> 输入或文件格式无效。请重试。",
+        'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> 请输入有效的正整数。",
+        'send_split_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>拆分文件模块</b>\n\n📥 上传任意 <code>.vcf</code> 或 <code>.txt</code> 文件以拆分为较小的部分...\n\n🔄 <b>正在等待文件...</b>",
+        'ask_split_limit':"🔢 每个拆分文件的联系人数量？:",
+        'send_merge_vcf':"<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>合并文件模块</b>\n\n📥 上传多个 <code>.vcf</code> 或 <code>.txt</code> 文件以将它们合并在一起...",
+        'merge_added':   "✅ 文件已添加！当前队列: {count}\n发送下一个文件或输入 /done 进行合并。",
+        'no_merge_files':"❌ 队列为空。在输入 /done 之前，请至少发送一个 `.vcf` 文件。",
+        'merging':       "🔄 正在合并...",
+        'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 编辑器模块</b>\n\n请发送 <code>.vcf</code> 文件:",
+        'ask_new_prefix':"📝 输入新的前缀名称:",
+        'cancelled':     "❌ 已取消。",
+        'b_txt2vcf':     "📄 文本/Excel 转 VCF",
+        'b_vcf2txt':     "📇 VCF 转 文本",
+        'b_navy':        "👑 高级 Admin/Navy VCF",
+        'b_editor':      "✏️ VCF 编辑器",
+        'b_merge':       "🔗 合并文件",
+        'b_split':       "✂️ 拆分文件",
+        'b_rename':      "⚙️ 重命名文件",
+        'b_details':     "🔍 获取 VCF 详情",
+        'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>重命名文件模块</b>\n\n📥 上传任意文件 (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code> 等) 立即修改名称。\n\n🔄 <b>正在等待文件...</b>",
+        'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 详情扫描器</b>\n\n📥 上传 <code>.vcf</code> 文件以提取姓名和详细信息...\n\n🔄 <b>正在等待文件...</b>"
+    }
+}
 
-def download_to_temp(message):
-    """Download an incoming document to a uniquely-named temp file. Returns (path, original_name)."""
-    file_info = bot.get_file(message.document.file_id)
-    data = bot.download_file(file_info.file_path)
-    orig = message.document.file_name or "file"
-    ext = os.path.splitext(orig)[1] or ".bin"
-    path = os.path.join(TMP_DIR, f"{uuid.uuid4().hex}{ext}")
-    with open(path, "wb") as f:
-        f.write(data)
-    return path, orig
+# ── Build the complete set of known menu-button texts (all 3 languages) ───────
+ALL_BUTTON_TEXTS = set()
+for _lang in TEXTS:
+    for _key, _val in TEXTS[_lang].items():
+        if _key.startswith('b_'):
+            ALL_BUTTON_TEXTS.add(_val)
 
-# ============================================================================
-#  👥 USER REGISTRY  (thread-locked users.txt)
-# ============================================================================
-def register_user(uid):
-    """Persist a unique user id (thread-safe)."""
-    with USERS_LOCK:
-        existing = set()
-        if os.path.exists(USERS_FILE):
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                existing = {line.strip() for line in f if line.strip()}
-        if str(uid) not in existing:
-            with open(USERS_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{uid}\n")
+# Language-selector button texts
+LANG_BUTTON_TEXTS = {"🇬🇧 English", "🇮🇳 हिन्दी", "🇨🇳 简体中文"}
 
-def all_users():
-    with USERS_LOCK:
-        if not os.path.exists(USERS_FILE):
-            return []
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
+# Combined set: every text that the catch-all handler must treat as a menu event
+ALL_MENU_TEXTS = ALL_BUTTON_TEXTS | LANG_BUTTON_TEXTS
 
-# ============================================================================
-#  🛡️ ANTI-LOOP GATEKEEPER  (typed global commands)
-# ============================================================================
-GLOBAL_COMMANDS = {"/start", "/help", "/cancel", "/ping", "/stats", "/broadcast", "/caption"}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CORE ANTI-LOOP GATE-KEEPER
+#
+#  KEY FIX — this function is the ONLY place that routes menu buttons.
+#  The catch-all handler (handle_menu_and_languages) now ONLY calls this
+#  function and does NOTHING ELSE.  _dispatch_menu_button is called
+#  exclusively from here, never from handle_menu_and_languages directly.
+#  This collapses the execution graph to a single path and eliminates every
+#  possible re-entrancy scenario.
+# ════════════════════════════════════════════════════════════════════════════════
 
 def check_menu_or_commands(message):
+    """Gate-keeper called at the top of every step-handler AND by the catch-all.
+
+    Returns True  → caller must stop immediately (message was handled here).
+    Returns False → normal step input; caller should proceed normally.
+
+    Thread-safety contract
+    ──────────────────────
+    State is cleared under DATA_LOCK BEFORE any routing logic executes, so
+    a concurrent thread that also enters here for the same chat_id will find
+    an already-clean state and will not register duplicate step-handlers.
     """
-    Central re-entrancy gatekeeper. Run at the TOP of every step-handler.
+    if not message or not message.text:
+        return False
 
-    If, while inside a conversational step, the user types a global command,
-    we ATOMICALLY:
-      1. clear any pending next-step handler,
-      2. wipe the active user data session,
-      3. execute the command,
-      4. signal the caller to HALT (return True).
+    text     = message.text.strip()
+    chat_id  = message.chat.id
+    base_cmd = text.split()[0].lower() if text.startswith('/') else None
 
-    NOTE: With the inline UI, menu taps arrive as callback queries and are
-    intercepted/cleared by `on_menu` (see below) — the same atomic guarantee.
+    # /done and /skip are step-handler signals — let them fall through
+    if base_cmd in ('/done', '/skip') or text == "✅ Done":
+        return False
 
-    Returns True if the current step should abort, False to continue normally.
-    """
-    uid = message.from_user.id
-    text = (message.text or "").strip()
-    cmd = text.split()[0] if text else ""
-    if cmd in GLOBAL_COMMANDS:
-        bot.clear_step_handler_by_chat_id(message.chat.id)
-        reset_user_data(uid)
-        _dispatch_command(message, cmd)
-        return True
-    return False
-
-def _dispatch_command(message, cmd):
-    """Execute a global command (used by the gatekeeper to re-enter cleanly)."""
-    if cmd == "/start":
-        cmd_start(message)
-    elif cmd == "/help":
-        cmd_help(message)
-    elif cmd == "/cancel":
-        cmd_cancel(message)
-    elif cmd == "/ping":
-        cmd_ping(message)
-    elif cmd == "/stats":
-        cmd_stats(message)
-    elif cmd == "/broadcast":
-        cmd_broadcast(message)
-    elif cmd == "/caption":
-        cmd_caption(message)
-
-# ============================================================================
-#  🎬 COMMAND HANDLERS
-# ============================================================================
-@bot.message_handler(commands=["start"])
-def cmd_start(message):
-    uid = message.from_user.id
-    register_user(uid)
-    bot.clear_step_handler_by_chat_id(message.chat.id)
-    reset_user_data(uid)
-    bot.send_message(message.chat.id, t(uid, "welcome"), reply_markup=main_menu(uid))
-
-@bot.message_handler(commands=["help"])
-def cmd_help(message):
-    uid = message.from_user.id
-    bot.send_message(message.chat.id, t(uid, "help"), reply_markup=main_menu(uid))
-
-@bot.message_handler(commands=["cancel"])
-def cmd_cancel(message):
-    uid = message.from_user.id
-    bot.clear_step_handler_by_chat_id(message.chat.id)
-    reset_user_data(uid)
-    bot.send_message(message.chat.id, t(uid, "cancelled"), reply_markup=main_menu(uid))
-
-@bot.message_handler(commands=["ping"])
-def cmd_ping(message):
-    uid = message.from_user.id
-    start = time.time()
-    sent = bot.send_message(message.chat.id, f"{ce('pingpong')} Pinging...")
-    latency = int((time.time() - start) * 1000)
-    bot.edit_message_text(
-        f"{ce('pingpong')}{ce('bolt')} <b>Pong!</b>\n\n{ce('signal')} Round-trip velocity: <b>{latency} ms</b> {ce('rocket')}",
-        message.chat.id, sent.message_id,
+    is_global_cmd = base_cmd in (
+        '/start', '/language', '/help', '/cancel',
+        '/caption', '/ping', '/stats', '/broadcast'
     )
+    is_menu_btn = text in ALL_MENU_TEXTS
 
-@bot.message_handler(commands=["caption"])
-def cmd_caption(message):
-    uid = message.from_user.id
-    s = get_session(uid)
-    with SESSION_LOCK:
-        s["caption"] = not s.get("caption", True)
-        now = s["caption"]
-    bot.send_message(message.chat.id, t(uid, "caption_on" if now else "caption_off"))
+    if not is_global_cmd and not is_menu_btn:
+        return False
 
-@bot.message_handler(commands=["stats"])
-def cmd_stats(message):
-    uid = message.from_user.id
-    if uid not in ADMIN_IDS:
-        bot.send_message(message.chat.id, t(uid, "admin_only"))
-        return
-    with SESSION_LOCK:
-        active = len(SESSIONS)
-    bot.send_message(message.chat.id, t(uid, "stats", u=len(all_users()), s=active))
+    # ── CRITICAL: atomically wipe step handler + session state FIRST ──────────
+    # clear_step_handler_by_chat_id is telebot's own thread-safe method;
+    # we call it before acquiring DATA_LOCK to avoid a potential deadlock
+    # with telebot's internal lock inside that method.
+    bot.clear_step_handler_by_chat_id(chat_id=chat_id)
+    with DATA_LOCK:
+        user_data.pop(chat_id, None)
+        merge_storage.pop(chat_id, None)
+    # ──────────────────────────────────────────────────────�����──────────────────
 
-@bot.message_handler(commands=["broadcast"])
-def cmd_broadcast(message):
-    uid = message.from_user.id
-    if uid not in ADMIN_IDS:
-        bot.send_message(message.chat.id, t(uid, "admin_only"))
-        return
-    msg = bot.send_message(message.chat.id, t(uid, "broadcast_ask"))
-    bot.register_next_step_handler(msg, step_broadcast_send)
-
-def step_broadcast_send(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    payload = message.text or ""
-    ok = fail = 0
-    for u in all_users():
-        try:
-            bot.send_message(int(u), f"{ce('mega')}{ce('sparkle')} <b>Broadcast</b>\n\n{escape(payload)}")
-            ok += 1
-            time.sleep(0.05)  # gentle throttle to respect rate limits
-        except Exception:
-            fail += 1
-    bot.send_message(message.chat.id, t(uid, "broadcast_done", ok=ok, fail=fail), reply_markup=main_menu(uid))
-
-@bot.message_handler(commands=["done"])
-def cmd_done(message):
-    """Global /done — primarily used to finalize the merge queue."""
-    uid = message.from_user.id
-    chat_id = message.chat.id
-    with SESSION_LOCK:
-        mode = SESSIONS.get(uid, {}).get("data", {}).get("mode")
-    if mode == "merge":
-        finalize_merge_prompt(chat_id, uid)
+    if is_global_cmd:
+        cmd_map = {
+            '/start':     send_welcome,
+            '/language':  send_welcome,
+            '/help':      help_command,
+            '/cancel':    cancel_command,
+            '/caption':   caption_toggle,
+            '/ping':      ping_speed_test,
+            '/stats':     bot_statistics_check,
+            '/broadcast': broadcast_message,
+        }
+        cmd_map[base_cmd](message)
     else:
-        cmd_start(message)
+        # is_menu_btn — route through the single dispatcher; NEVER call
+        # handle_menu_and_languages from here (that would be circular).
+        _dispatch_menu_button(message)
 
-@bot.message_handler(commands=["skip"])
-def cmd_skip(message):
-    """Global /skip — only meaningful inside steps; otherwise harmless."""
-    bot.send_message(message.chat.id, f"{ce('back')} Nothing to skip right now. 😊")
+    return True   # ← tells every caller: "I handled it, you must return now"
 
-# ----------------------------------------------------------------------------
-#  🪄 /emojiid — REAL custom_emoji_id grabber (the key to live animations)
-# ----------------------------------------------------------------------------
-#  The IDs in CUSTOM_EMOJI are PLACEHOLDERS. Telegram custom-emoji IDs are
-#  account/pack-specific and cannot be invented. Run this command, then send a
-#  message containing your Telegram Premium ANIMATED emoji(s); the bot echoes
-#  each emoji's real custom_emoji_id so you can paste them into CUSTOM_EMOJI.
-#  After filling real IDs, set env USE_CUSTOM_EMOJI=1 and redeploy.
-@bot.message_handler(commands=["emojiid"])
-def cmd_emojiid(message):
-    msg = bot.send_message(
-        message.chat.id,
-        f"{ce('sparkle')}{ce('bulb')} <b>Custom Emoji ID Grabber</b>\n\n"
-        f"Send me a single message containing your Telegram <b>Premium animated emoji(s)</b>, "
-        f"and I'll reply with each one's <code>custom_emoji_id</code> to paste into <code>CUSTOM_EMOJI</code>.\n\n"
-        f"{ce('warn')} You must have Telegram Premium, and you must send the <i>animated</i> emoji "
-        f"(not a normal Unicode one).",
-    )
-    bot.register_next_step_handler(msg, step_emojiid_capture)
 
-def step_emojiid_capture(message):
-    if check_menu_or_commands(message):
+def _dispatch_menu_button(message):
+    """Route a confirmed menu-button press.
+
+    Called ONLY from check_menu_or_commands.
+    NEVER called directly from handle_menu_and_languages.
+    This keeps the call graph strictly acyclic:
+
+        handle_menu_and_languages
+               ↓
+        check_menu_or_commands  (checks + clears state)
+               ↓
+        _dispatch_menu_button   (registers fresh step-handler)
+
+    No function in _dispatch_menu_button ever calls back into
+    check_menu_or_commands or handle_menu_and_languages.
+    """
+    chat_id = message.chat.id
+    text    = message.text.strip()
+    lang    = user_langs.get(chat_id, 'en')
+    t       = TEXTS[lang]
+
+    # ── Language-selector buttons ─────────────────────────────────────────────
+    if text in LANG_BUTTON_TEXTS:
+        if "English" in text:
+            new_lang = 'en'
+        elif "हिन्दी" in text:
+            new_lang = 'hi'
+        else:
+            new_lang = 'zh'
+        with DATA_LOCK:
+            user_langs[chat_id] = new_lang
+        bot.send_message(
+            chat_id,
+            TEXTS[new_lang]['welcome'],
+            reply_markup=get_main_menu_keyboard(new_lang, chat_id),
+            parse_mode="HTML"
+        )
         return
-    uid = message.from_user.id
-    text = message.text or message.caption or ""
-    ents = (message.entities or []) + (message.caption_entities or [])
-    found = []
-    for e in ents:
-        if getattr(e, "type", None) == "custom_emoji":
-            glyph = text[e.offset:e.offset + e.length]
-            found.append((glyph, e.custom_emoji_id))
-    if not found:
+
+    # ── Module routing ────────────────────────────────────────────────────────
+    if text in [TEXTS['en']['b_txt2vcf'], TEXTS['hi']['b_txt2vcf'], TEXTS['zh']['b_txt2vcf']]:
+        markup = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("✅ Done", callback_data="action_done")
+        )
+        bot.send_message(chat_id, t['send_txt'], reply_markup=markup, parse_mode="HTML")
+        with DATA_LOCK:
+            user_data[chat_id] = {'numbers': [], 'mode': 'normal', 'origin_chat_id': chat_id}
+        bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
+
+    elif text in [TEXTS['en']['b_navy'], TEXTS['hi']['b_navy'], TEXTS['zh']['b_navy']]:
+        with DATA_LOCK:
+            user_data[chat_id] = {
+                'mode': 'navy_dual',
+                'admin_numbers': [],
+                'navy_numbers': [],
+                'admin_prefix': '',
+                'navy_prefix': '',
+                'filename': '',
+                'origin_chat_id': chat_id
+            }
+        markup = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("⏭️ Skip Admin", callback_data="skip_admin")
+        )
+        bot.send_message(
+            chat_id,
+            "👑 **Step 1 • Admin Contacts**\n\n📥 Send Admin numbers or files...",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
+
+    elif text in [TEXTS['en']['b_vcf2txt'], TEXTS['hi']['b_vcf2txt'], TEXTS['zh']['b_vcf2txt']]:
+        bot.send_message(chat_id, t['send_vcf'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_vcf_to_txt)
+
+    elif text in [TEXTS['en']['b_split'], TEXTS['hi']['b_split'], TEXTS['zh']['b_split']]:
+        bot.send_message(chat_id, t['send_split_vcf'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_split_vcf)
+
+    elif text in [TEXTS['en']['b_merge'], TEXTS['hi']['b_merge'], TEXTS['zh']['b_merge']]:
+        with DATA_LOCK:
+            merge_storage[chat_id] = []
+        bot.send_message(chat_id, t['send_merge_vcf'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
+
+    elif text in [TEXTS['en']['b_editor'], TEXTS['hi']['b_editor'], TEXTS['zh']['b_editor']]:
+        bot.send_message(chat_id, t['enter_editor_vcf'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_editor_vcf)
+
+    elif text in [TEXTS['en']['b_rename'], TEXTS['hi']['b_rename'], TEXTS['zh']['b_rename']]:
+        bot.send_message(chat_id, t['ask_rename'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_rename_vcf)
+
+    elif text in [TEXTS['en']['b_details'], TEXTS['hi']['b_details'], TEXTS['zh']['b_details']]:
+        bot.send_message(chat_id, t['ask_details'], parse_mode="HTML")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_details_vcf)
+
+
+# ── Main-menu keyboard builder ────────────────────────────────────────────────
+
+def get_main_menu_keyboard(lang, user_id):
+    from telebot import types
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+    kb.row(
+        types.KeyboardButton(TEXTS[lang]['b_txt2vcf'], icon_custom_emoji_id="5433653135799228968"),
+        types.KeyboardButton(TEXTS[lang]['b_vcf2txt'], icon_custom_emoji_id="5431736674147114227")
+    )
+    kb.row(
+        types.KeyboardButton(TEXTS[lang]['b_navy'], icon_custom_emoji_id="6266995104687330978"),
+        types.KeyboardButton(TEXTS[lang]['b_editor'], icon_custom_emoji_id="5334673106202010226")
+    )
+    kb.row(
+        types.KeyboardButton(TEXTS[lang]['b_merge'], icon_custom_emoji_id="5264727218734524899"),
+        types.KeyboardButton(TEXTS[lang]['b_split'], icon_custom_emoji_id="5237808360882977239")
+    )
+    kb.row(
+        types.KeyboardButton(TEXTS[lang]['b_rename'], icon_custom_emoji_id="4920442992474456685"),
+        types.KeyboardButton(TEXTS[lang]['b_details'], icon_custom_emoji_id="5893382531037794941")
+    )
+    return kb
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  COMMAND HANDLERS  (telebot always prefers these over func=True handlers)
+# ════════════════════════════════════════════════════════════════════════════════
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(
+        message.chat.id,
+        "⁉️ **How To Use? / 使用说明**\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "• Pick a module from the menu below.\n"
+        "• Follow the step-by-step prompts.\n"
+        "• `/cancel` — abort the current process anytime.\n"
+        "• `/done` — finish collecting/merging files when prompted.\n"
+        "• `/skip` — skip an optional step.\n"
+        "• `/caption` — toggle file captions ON/OFF.\n"
+        "• `/ping` — check bot status & latency.\n"
+        "• `/stats` — view bot statistics.",
+        parse_mode="Markdown"
+    )
+
+
+@bot.message_handler(commands=['caption'])
+def caption_toggle(message):
+    chat_id = message.chat.id
+    current = user_captions.get(chat_id, True)
+    user_captions[chat_id] = not current
+    status_str = "🟢 **ON**" if user_captions[chat_id] else "🔴 **OFF**"
+    bot.send_message(
+        chat_id,
+        f"⚠️ **Caption Configuration:** File block captions are now {status_str}.",
+        parse_mode="Markdown"
+    )
+
+
+@bot.message_handler(commands=['ping'])
+def ping_speed_test(message):
+    start_time = time.time()
+    msg = bot.send_message(message.chat.id, "⚡ <i>Checking Bot Response Velocity...</i>", parse_mode="HTML")
+    end_time   = time.time()
+    ping_ms    = round((end_time - start_time) * 1000)
+    response_text = (
+        "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 🏓 <b>PONG! SYSTEM STATUS</b>\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "📡 <b>Latency:</b> {} ms\n"
+        "⚡ <b>Speed:</b> 🚀 Good\n"
+        "❓ <b>Status:</b> Online\n"
+        "🔒 <b>Server:</b> Operational\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "👤 <i>Owner:</i> @MR_MUKUL4"
+    ).format(ping_ms)
+    bot.edit_message_text(response_text, message.chat.id, msg.message_id, parse_mode="HTML")
+
+
+@bot.message_handler(commands=['stats'])
+def bot_statistics_check(message):
+    # Strictly restricted to ADMIN_ID
+    if message.from_user.id != ADMIN_ID:
         bot.send_message(
             message.chat.id,
-            f"{ce('cross')} No custom emoji detected. Make sure you (with Telegram Premium) "
-            f"send the <b>animated</b> emoji, then run /emojiid again.",
-            reply_markup=main_menu(uid),
+            "⚠️ This information is restricted to the Bot Administrator only."
         )
         return
-    lines = [f"{ce('check')}{ce('party')} <b>Found {len(found)} custom emoji:</b>", ""]
-    for glyph, cid in found:
-        lines.append(f"{glyph}  →  <code>{escape(str(cid))}</code>")
-    lines.append("")
-    lines.append(
-        f"{ce('point')} Paste these IDs into the <code>CUSTOM_EMOJI</code> map, then set "
-        f"env <code>USE_CUSTOM_EMOJI=1</code> and redeploy to go live!"
+    total = 0
+    if os.path.exists("users.txt"):
+        with FILE_LOCK:
+            with open("users.txt", "r") as f:
+                total = len([l for l in f.read().splitlines() if l.strip()])
+    bot.send_message(
+        message.chat.id,
+        f"<tg-emoji emoji-id=\"5800812959173187710\">👑</tg-emoji> <b>Bot Operational Statistics:</b>\n\n"
+        f"👥 Registered Users: <code>{total}</code>\n"
+        f"👑 Channels status: <code>Operational</code>🛡️\n"
+        f"<tg-emoji emoji-id=\"6109340839664686978\">🌟</tg-emoji> ⚙️ Engine Build: <code>v4.5 Live Framework</code>",
+        parse_mode="HTML"
     )
-    bot.send_message(message.chat.id, "\n".join(lines), reply_markup=main_menu(uid))
 
-# ============================================================================
-#  🧭 INLINE CALLBACK HANDLERS  (menu + language + merge-done)
-# ============================================================================
-@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("lang:"))
-def on_lang(call):
-    uid = call.from_user.id
-    chat_id = call.message.chat.id
-    lang = call.data.split(":", 1)[1]
-    if lang in ("en", "hi", "zh"):
-        s = get_session(uid)
-        with SESSION_LOCK:
-            s["lang"] = lang
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_message(message):
+    # Strictly restricted to ADMIN_ID — silently ignore everyone else
+    if message.from_user.id != ADMIN_ID:
+        return
+    parts = message.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        bot.send_message(message.chat.id, "❌ Please type your message after the command.")
+        return
+    broadcast_text = parts[1].strip()
+    if not os.path.exists("users.txt"):
+        bot.send_message(message.chat.id, "❌ No registered users found (users.txt missing).")
+        return
+    with FILE_LOCK:
+        with open("users.txt", "r") as f:
+            user_ids = [l.strip() for l in f.read().splitlines() if l.strip()]
+    sent_count   = 0
+    failed_count = 0
+    for uid in user_ids:
         try:
-            bot.answer_callback_query(call.id, "✅")
+            bot.send_message(int(uid), broadcast_text)
+            sent_count += 1
         except Exception:
-            pass
-        bot.send_message(chat_id, t(uid, "lang_set"), reply_markup=main_menu(uid))
+            failed_count += 1
+    bot.send_message(
+        message.chat.id,
+        f"✅ Broadcast completed!\n\n📤 Sent: `{sent_count}`\n❌ Failed/Blocked: `{failed_count}`",
+        parse_mode="Markdown"
+    )
 
-@bot.callback_query_handler(func=lambda c: c.data == "merge:done")
-def on_merge_done(call):
-    """Inline 'Done & Merge' button -> finalize the merge queue."""
-    uid = call.from_user.id
+
+@bot.message_handler(commands=['start', 'language'])
+def send_welcome(message):
+    save_user(message.from_user.id)
+    markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
+    markup.add(
+        KeyboardButton("🇬🇧 English"),
+        KeyboardButton("🇮🇳 हिन्दी"),
+        KeyboardButton("🇨🇳 简体中文")
+    )
+    bot.send_message(
+        message.chat.id,
+        "🌐 **Select Language / भाषा चुनें / 选择语言:**",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+@bot.message_handler(commands=['cancel'])
+def cancel_command(message):
+    chat_id = message.chat.id
+    lang    = user_langs.get(chat_id, 'en')
+    bot.clear_step_handler_by_chat_id(chat_id=chat_id)
+    with DATA_LOCK:
+        user_data.pop(chat_id, None)
+        merge_storage.pop(chat_id, None)
+    bot.send_message(
+        chat_id,
+        TEXTS[lang]['cancelled'],
+        reply_markup=get_main_menu_keyboard(lang, chat_id)
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CATCH-ALL TEXT HANDLER
+#
+#  KEY FIX: This handler now calls check_menu_or_commands() and STOPS.
+#  It does NOT independently call _dispatch_menu_button.
+#  This means every message that passes through here goes through a single,
+#  locked gate that serialises state-clearing before routing — no race.
+#
+#  If the message is NOT a menu button or global command,
+#  check_menu_or_commands returns False and we return silently.
+#  That means random text messages while no step-handler is active are
+#  simply ignored (no error spam, no loop), which is correct behavior.
+# ════════════════════════════════════════════════════════════════════════════════
+
+@bot.message_handler(func=lambda message: True)
+def handle_menu_and_languages(message):
+    """Catch-all for menu buttons and language selectors.
+
+    ARCHITECTURE NOTE:
+    ──────────────────
+    This handler is intentionally thin.  It delegates entirely to
+    check_menu_or_commands, which handles both routing AND state-clearing
+    atomically.  We never call _dispatch_menu_button directly from here —
+    that would create a second routing path and re-introduce the re-entrancy
+    bug.
+
+    Messages that are not recognised as menu buttons are silently dropped.
+    This is safe because any legitimate step-input arrives through a
+    register_next_step_handler_by_chat_id chain that bypasses this handler
+    entirely (telebot's step-handler queue runs before the @message_handler
+    func=True matcher).
+    """
+    if not message.text:
+        return
+    save_user(message.from_user.id)
+    # check_menu_or_commands handles EVERYTHING: state-clear + routing.
+    # If it returns False the message was not a menu button — just drop it.
+    check_menu_or_commands(message)
+
+
+# ════════════════════════════════════════════════════════════════���═══════════════
+#  CALLBACK QUERY HANDLER
+# ════════════════════════════════════════════════════════════════════════════════
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
     chat_id = call.message.chat.id
+    lang    = user_langs.get(chat_id, 'en')
+
     try:
         bot.answer_callback_query(call.id)
     except Exception:
         pass
-    with SESSION_LOCK:
-        mode = SESSIONS.get(uid, {}).get("data", {}).get("mode")
-    if mode == "merge":
-        finalize_merge_prompt(chat_id, uid)
-    else:
-        bot.send_message(chat_id, t(uid, "menu_hint"), reply_markup=main_menu(uid))
 
-@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("menu:"))
-def on_menu(call):
-    """
-    Inline main-menu router. THIS is the anti-loop gatekeeper for callbacks:
-    a menu tap mid-conversation atomically clears the pending step-handler and
-    wipes the active volatile session data before routing to the new module.
-    """
-    uid = call.from_user.id
-    chat_id = call.message.chat.id
-    key = call.data.split(":", 1)[1]
     try:
-        bot.answer_callback_query(call.id)
+        bot.delete_message(chat_id, call.message.message_id)
     except Exception:
         pass
 
-    # --- ATOMIC ANTI-LOOP RESET ---
-    bot.clear_step_handler_by_chat_id(chat_id)
-    reset_user_data(uid)
-    register_user(uid)
-    # ------------------------------
+    # Clear any pending step-handler to prevent double-fires
+    bot.clear_step_handler_by_chat_id(chat_id=chat_id)
 
-    route_menu(chat_id, uid, key)
-
-# ============================================================================
-#  🧭 MENU ROUTER
-# ============================================================================
-def route_menu(chat_id, uid, key):
-    """Dispatch a canonical menu key to its module entrypoint."""
-    if key == "home":
-        bot.send_message(chat_id, t(uid, "welcome"), reply_markup=main_menu(uid))
-    elif key == "language":
-        bot.send_message(chat_id, t(uid, "choose_lang"), reply_markup=lang_menu())
-    elif key == "text_to_vcf":
-        start_text_to_vcf(chat_id, uid)
-    elif key == "vcf_to_text":
-        start_vcf_to_text(chat_id, uid)
-    elif key == "admin_navy":
-        start_admin_navy(chat_id, uid)
-    elif key == "vcf_editor":
-        start_get_details(chat_id, uid)
-    elif key == "merge_file":
-        start_merge(chat_id, uid)
-    elif key == "split_file":
-        start_split(chat_id, uid)
-    elif key == "rename_file":
-        start_rename(chat_id, uid)
-    elif key == "get_details":
-        start_get_details(chat_id, uid)
-    else:
-        bot.send_message(chat_id, t(uid, "menu_hint"), reply_markup=main_menu(uid))
-
-# ============================================================================
-#  📄 MODULE 1 — TEXT/EXCEL TO VCF  (Normal Mode)
-# ============================================================================
-def start_text_to_vcf(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "text2vcf"}
-    msg = bot.send_message(chat_id, t(uid, "send_input_numbers"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_t2v_input)
-
-def step_t2v_input(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    numbers = []
-    try:
-        if message.content_type == "document":
-            path, orig = download_to_temp(message)
-            try:
-                if orig.lower().endswith(".xlsx"):
-                    numbers = numbers_from_xlsx(path)
-                else:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                        numbers = extract_numbers(f.read())
-            finally:
-                safe_remove(path)
-        else:
-            numbers = extract_numbers(message.text)
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-        reset_user_data(uid)
-        return
-
-    if not numbers:
-        msg = bot.send_message(message.chat.id, t(uid, "no_numbers"))
-        bot.register_next_step_handler(msg, step_t2v_input)
-        return
-
-    random.shuffle(numbers)  # randomize as specified
-    with SESSION_LOCK:
-        get_session(uid)["data"]["numbers"] = numbers
-    bot.send_message(message.chat.id, t(uid, "found_numbers", n=len(numbers)))
-    msg = bot.send_message(message.chat.id, t(uid, "ask_vcf_name"))
-    bot.register_next_step_handler(msg, step_t2v_name)
-
-def step_t2v_name(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    with SESSION_LOCK:
-        get_session(uid)["data"]["filename"] = (message.text or "contacts").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_prefix"))
-    bot.register_next_step_handler(msg, step_t2v_prefix)
-
-def step_t2v_prefix(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    with SESSION_LOCK:
-        get_session(uid)["data"]["prefix"] = (message.text or "Contact").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_company"))
-    bot.register_next_step_handler(msg, step_t2v_company)
-
-def step_t2v_company(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    text = (message.text or "").strip()
-    company = "" if text.lower() in ("/skip", "skip") else text
-    with SESSION_LOCK:
-        get_session(uid)["data"]["company"] = company
-    msg = bot.send_message(message.chat.id, t(uid, "ask_start_index"))
-    bot.register_next_step_handler(msg, step_t2v_start)
-
-def step_t2v_start(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    try:
-        start_idx = int(re.sub(r'\D', '', (message.text or "1")) or "1")
-    except ValueError:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
-        bot.register_next_step_handler(msg, step_t2v_start)
-        return
-    with SESSION_LOCK:
-        get_session(uid)["data"]["start_index"] = start_idx
-    msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=DEFAULT_SPLIT_MIN, mx=DEFAULT_SPLIT_MAX))
-    bot.register_next_step_handler(msg, step_t2v_split)
-
-def step_t2v_split(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    try:
-        split = int(re.sub(r'\D', '', (message.text or "")) or "0")
-    except ValueError:
-        split = 0
-    if split <= 0:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
-        bot.register_next_step_handler(msg, step_t2v_split)
-        return
-    # Clamp smoothly into the 200–250 margin.
-    split = max(DEFAULT_SPLIT_MIN, min(DEFAULT_SPLIT_MAX, split))
-
-    with SESSION_LOCK:
-        data = get_session(uid)["data"]
-        numbers = data.get("numbers", [])
-        prefix = data.get("prefix", "Contact")
-        company = data.get("company", "")
-        start_idx = data.get("start_index", 1)
-        fname = data.get("filename", "contacts")
-
-    bot.send_message(message.chat.id, t(uid, "building"))
-    try:
-        cards = build_vcards(numbers, prefix, company, start_idx)
-        n_files = send_vcf_chunks(uid, message.chat.id, cards, fname, split)
-        bot.send_message(message.chat.id, t(uid, "done_files", n=n_files, c=len(cards)), reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        reset_user_data(uid)
-
-# ============================================================================
-#  👑 MODULE 2 — ADMIN/NAVY DUAL-MODE  (auto-split @ 200)
-# ============================================================================
-def start_admin_navy(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "admin_navy"}
-    msg = bot.send_message(chat_id, t(uid, "admin_collect_vip"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_an_vip)
-
-def _grab_numbers(message):
-    """Helper: read numbers from a document or pasted text in a single message."""
-    if message.content_type == "document":
-        path, orig = download_to_temp(message)
-        try:
-            if orig.lower().endswith(".xlsx"):
-                return numbers_from_xlsx(path)
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return extract_numbers(f.read())
-        finally:
-            safe_remove(path)
-    return extract_numbers(message.text)
-
-def step_an_vip(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    text = (message.text or "").strip().lower()
-    if text in ("/skip", "skip"):
-        vips = []
-    else:
-        vips = _grab_numbers(message)
-    with SESSION_LOCK:
-        get_session(uid)["data"]["vips"] = vips
-    if vips:
-        msg = bot.send_message(message.chat.id, t(uid, "admin_vip_prefix"))
-        bot.register_next_step_handler(msg, step_an_vip_prefix)
-    else:
-        with SESSION_LOCK:
-            get_session(uid)["data"]["vip_prefix"] = "Admin"
-        msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"))
-        bot.register_next_step_handler(msg, step_an_navy)
-
-def step_an_vip_prefix(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    with SESSION_LOCK:
-        get_session(uid)["data"]["vip_prefix"] = (message.text or "Admin").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "admin_collect_navy"))
-    bot.register_next_step_handler(msg, step_an_navy)
-
-def step_an_navy(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    navy = _grab_numbers(message)
-    if not navy:
-        msg = bot.send_message(message.chat.id, t(uid, "no_numbers"))
-        bot.register_next_step_handler(msg, step_an_navy)
-        return
-    with SESSION_LOCK:
-        get_session(uid)["data"]["navy"] = navy
-    msg = bot.send_message(message.chat.id, t(uid, "admin_navy_prefix"))
-    bot.register_next_step_handler(msg, step_an_navy_prefix)
-
-def step_an_navy_prefix(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    with SESSION_LOCK:
-        get_session(uid)["data"]["navy_prefix"] = (message.text or "Navy").strip()
-    msg = bot.send_message(message.chat.id, t(uid, "ask_outfile"))
-    bot.register_next_step_handler(msg, step_an_outfile)
-
-def step_an_outfile(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    fname = (message.text or "AdminNavy").strip()
-    with SESSION_LOCK:
-        data = get_session(uid)["data"]
-        vips = data.get("vips", [])
-        navy = data.get("navy", [])
-        vip_prefix = data.get("vip_prefix", "Admin")
-        navy_prefix = data.get("navy_prefix", "Navy")
-
-    bot.send_message(message.chat.id, t(uid, "building"))
-    try:
-        # VIP cards first, then Navy cards — single combined deck.
-        cards = build_vcards(vips, vip_prefix, "", 1) + build_vcards(navy, navy_prefix, "", 1)
-        # NO split prompt — always auto-split at the hidden constant (200).
-        n_files = send_vcf_chunks(uid, message.chat.id, cards, fname, ADMIN_NAVY_SPLIT)
-        bot.send_message(message.chat.id, t(uid, "done_files", n=n_files, c=len(cards)), reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        reset_user_data(uid)
-
-# ============================================================================
-#  📇 MODULE 3 — VCF TO TEXT
-# ============================================================================
-def start_vcf_to_text(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "vcf2text"}
-    msg = bot.send_message(chat_id, t(uid, "send_vcf"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_vcf2text_file)
-
-def step_vcf2text_file(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
-        bot.register_next_step_handler(msg, step_vcf2text_file)
-        return
-
-    in_path = out_path = None
-    try:
-        in_path, _ = download_to_temp(message)
-        with open(in_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
-        numbers = []
-        seen = set()
-        for tel in TEL_RE.findall(raw):
-            for num in extract_numbers(tel):
-                if num not in seen:
-                    seen.add(num)
-                    numbers.append(num)
-        out_path = write_temp("\n".join(numbers) + "\n", ".txt")
-        with open(out_path, "rb") as f:
-            bot.send_document(
-                message.chat.id, f, visible_file_name="numbers.txt",
-                caption=caption_for(uid, f"{ce('card')}{ce('check')} Extracted <b>{len(numbers)}</b> unique numbers! {ce('diamond')}"),
-            )
-        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        safe_remove(in_path)
-        safe_remove(out_path)
-        reset_user_data(uid)
-
-# ============================================================================
-#  ✂️ MODULE 4 — VCF SPLITTER
-# ============================================================================
-def start_split(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "split"}
-    msg = bot.send_message(chat_id, t(uid, "send_vcf"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_split_file)
-
-def step_split_file(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
-        bot.register_next_step_handler(msg, step_split_file)
-        return
-    in_path = None
-    try:
-        in_path, _ = download_to_temp(message)
-        with open(in_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
-        cards = [c.strip() for c in VCARD_RE.findall(raw)]
-        if not cards:
-            bot.send_message(message.chat.id, t(uid, "not_vcf"), reply_markup=main_menu(uid))
-            reset_user_data(uid)
+    if call.data == "action_done":
+        with DATA_LOCK:
+            numbers = list(user_data.get(chat_id, {}).get('numbers', []))
+        if not numbers:
+            bot.send_message(chat_id, TEXTS[lang]['invalid_file'], parse_mode="HTML")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
             return
-        with SESSION_LOCK:
-            get_session(uid)["data"]["cards"] = cards
-        bot.send_message(message.chat.id, t(uid, "found_numbers", n=len(cards)))
-        msg = bot.send_message(message.chat.id, t(uid, "ask_split", mn=1, mx=1000))
-        bot.register_next_step_handler(msg, step_split_limit)
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-        reset_user_data(uid)
-    finally:
-        safe_remove(in_path)
+        bot.send_message(chat_id, "1️⃣ **Enter Final VCF file Name:**", parse_mode="Markdown")
+        bot.register_next_step_handler_by_chat_id(chat_id, get_file_name)
 
-def step_split_limit(message):
+    elif call.data in ("skip_admin", "done_admin"):
+        with DATA_LOCK:
+            if chat_id not in user_data:
+                bot.send_message(chat_id, "❌ Session expired. Please start again.")
+                return
+            if call.data == "skip_admin":
+                user_data[chat_id]['admin_numbers'] = []
+        trigger_navy_step_2(chat_id)
+
+    elif call.data in ("skip_navy", "done_navy"):
+        with DATA_LOCK:
+            if chat_id not in user_data:
+                bot.send_message(chat_id, "❌ Session expired. Please start again.")
+                return
+            if call.data == "skip_navy":
+                user_data[chat_id]['navy_numbers'] = []
+        proceed_after_collection(chat_id)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TEXT/EXCEL → VCF NORMAL MODE FLOW
+#  Steps: process_inputs → get_file_name → get_prefix → get_company
+#         → get_start_number → generate_vcf_router
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_inputs(message):
     if check_menu_or_commands(message):
         return
-    uid = message.from_user.id
-    try:
-        limit = int(re.sub(r'\D', '', (message.text or "")) or "0")
-    except ValueError:
-        limit = 0
-    if limit <= 0:
-        msg = bot.send_message(message.chat.id, t(uid, "bad_number"))
-        bot.register_next_step_handler(msg, step_split_limit)
-        return
-    with SESSION_LOCK:
-        get_session(uid)["data"]["limit"] = limit
-    msg = bot.send_message(message.chat.id, t(uid, "ask_basename"))
-    bot.register_next_step_handler(msg, step_split_basename)
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        if chat_id not in user_data:
+            return
+        current_list = list(user_data[chat_id]['numbers'])
 
-def step_split_basename(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    base = (message.text or "Split").strip()
-    with SESSION_LOCK:
-        data = get_session(uid)["data"]
-        cards = data.get("cards", [])
-        limit = data.get("limit", 200)
-    bot.send_message(message.chat.id, t(uid, "building"))
-    try:
-        # Produce Name_Part_1.vcf style names.
-        n_files = send_vcf_chunks(uid, message.chat.id, cards, f"{base}_Part", limit)
-        bot.send_message(message.chat.id, t(uid, "done_files", n=n_files, c=len(cards)), reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        reset_user_data(uid)
+    new_entries = []
 
-# ============================================================================
-#  🔗 MODULE 5 — MERGE
-# ============================================================================
-def start_merge(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "merge", "queue": []}
-    msg = bot.send_message(chat_id, t(uid, "merge_collect"), reply_markup=merge_menu(uid))
-    bot.register_next_step_handler(msg, step_merge_collect)
-
-def step_merge_collect(message):
-    if check_menu_or_commands(message):
-        return
-    uid = message.from_user.id
-    text = (message.text or "").strip()
-
-    # Finish on typed /done (the inline 'Done & Merge' button is handled by on_merge_done).
-    if text == "/done":
-        finalize_merge_prompt(message.chat.id, uid)
-        return
-
-    if message.content_type == "document":
+    if message.document:
+        fname = (message.document.file_name or "").lower()
         try:
-            path, _ = download_to_temp(message)
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-            safe_remove(path)
-            with SESSION_LOCK:
-                get_session(uid)["data"]["queue"].append(content)
-                qlen = len(get_session(uid)["data"]["queue"])
-            bot.send_message(message.chat.id, t(uid, "merge_added", n=qlen), reply_markup=merge_menu(uid))
+            file_info       = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            if fname.endswith('.txt'):
+                lines       = downloaded_file.decode('utf-8', errors='ignore').splitlines()
+                new_entries = [
+                    re.sub(r'[^\d\+]', '', l)
+                    for l in lines
+                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
+                ]
+            elif fname.endswith('.xlsx'):
+                wb = openpyxl.load_workbook(io.BytesIO(downloaded_file), data_only=True)
+                for sheet in wb.worksheets:
+                    for row in sheet.iter_rows(values_only=True):
+                        for cell in row:
+                            val     = str(cell).strip() if cell is not None else ''
+                            cleaned = re.sub(r'[^\d\+]', '', val)
+                            if len(cleaned) >= 7:
+                                new_entries.append(cleaned)
+            else:
+                bot.send_message(chat_id, "❌ Unsupported file type. Please send a `.txt` or `.xlsx` file.")
+                bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
+                return
         except Exception as e:
-            bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))))
+            logging.error(f"process_inputs file error: {e}")
+            bot.send_message(chat_id, f"❌ Could not read file: {e}")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
+            return
+    elif message.text:
+        found       = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
+        new_entries = [
+            re.sub(r'[^\d\+]', '', n)
+            for n in found
+            if len(re.sub(r'[^\d\+]', '', n)) >= 7
+        ]
     else:
-        bot.send_message(message.chat.id, t(uid, "merge_collect"), reply_markup=merge_menu(uid))
-
-    # Keep listening for more files.
-    bot.register_next_step_handler_by_chat_id(message.chat.id, step_merge_collect)
-
-def finalize_merge_prompt(chat_id, uid):
-    with SESSION_LOCK:
-        queue = get_session(uid)["data"].get("queue", [])
-    if not queue:
-        msg = bot.send_message(chat_id, t(uid, "merge_empty"), reply_markup=merge_menu(uid))
-        bot.register_next_step_handler(msg, step_merge_collect)
+        bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
         return
-    bot.clear_step_handler_by_chat_id(chat_id)
-    msg = bot.send_message(chat_id, t(uid, "ask_outfile"))
-    bot.register_next_step_handler(msg, step_merge_finalize)
 
-def step_merge_finalize(message):
+    with DATA_LOCK:
+        if chat_id not in user_data:
+            return
+        merged                      = list(dict.fromkeys(current_list + new_entries))
+        user_data[chat_id]['numbers'] = merged
+        count                       = len(merged)
+
+    markup = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✅ Done", callback_data="action_done")
+    )
+    bot.send_message(
+        chat_id,
+        f"📥 Collected: `{count}` numbers. Send more or click Done:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
+
+
+def get_file_name(message):
     if check_menu_or_commands(message):
         return
-    uid = message.from_user.id
-    fname = (message.text or "Merged").strip()
-    with SESSION_LOCK:
-        queue = get_session(uid)["data"].get("queue", [])
-    bot.send_message(message.chat.id, t(uid, "building"))
-    out_path = None
-    try:
-        all_cards = []
-        for content in queue:
-            cards = VCARD_RE.findall(content)
-            if cards:
-                all_cards.extend(c.strip() for c in cards)
-            else:
-                # Treat as raw numbers (.txt) -> build vCards.
-                nums = extract_numbers(content)
-                all_cards.extend(build_vcards(nums, "Contact", "", 1))
-        merged = "\n".join(all_cards) + "\n"
-        out_path = write_temp(merged, ".vcf")
-        with open(out_path, "rb") as f:
-            bot.send_document(
-                message.chat.id, f, visible_file_name=f"{fname}.vcf",
-                caption=caption_for(uid, f"{ce('link')}{ce('diamond')} Merged <b>{len(all_cards)}</b> contacts from <b>{len(queue)}</b> files! {ce('rocket')}"),
-            )
-        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        safe_remove(out_path)
-        reset_user_data(uid)
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Please type the file name.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, get_file_name)
+        return
+    with DATA_LOCK:
+        if message.chat.id in user_data:
+            user_data[message.chat.id]['filename'] = message.text.strip() or "Contacts"
+    bot.send_message(message.chat.id, "2️⃣ **Enter Contact Prefix Name:**", parse_mode="Markdown")
+    bot.register_next_step_handler_by_chat_id(message.chat.id, get_prefix)
 
-# ============================================================================
-#  ⚙️ MODULE 6 — QUICK RENAME
-# ============================================================================
-def start_rename(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "rename"}
-    msg = bot.send_message(chat_id, t(uid, "rename_send"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_rename_file)
 
-def step_rename_file(message):
+def get_prefix(message):
     if check_menu_or_commands(message):
         return
-    uid = message.from_user.id
-    if message.content_type != "document":
-        msg = bot.send_message(message.chat.id, t(uid, "rename_send"))
-        bot.register_next_step_handler(msg, step_rename_file)
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Please type the prefix name.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, get_prefix)
         return
-    try:
-        path, orig = download_to_temp(message)
-        ext = os.path.splitext(orig)[1]
-        with SESSION_LOCK:
-            get_session(uid)["data"]["path"] = path
-            get_session(uid)["data"]["ext"] = ext
-        msg = bot.send_message(message.chat.id, t(uid, "rename_ask"))
-        bot.register_next_step_handler(msg, step_rename_name)
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-        reset_user_data(uid)
+    with DATA_LOCK:
+        if message.chat.id in user_data:
+            user_data[message.chat.id]['prefix'] = message.text.strip() or "Contact"
+    bot.send_message(
+        message.chat.id,
+        "3️⃣ **Enter Company Name (or type 'skip'):**",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(message.chat.id, get_company)
 
-def step_rename_name(message):
+
+def get_company(message):
     if check_menu_or_commands(message):
         return
-    uid = message.from_user.id
-    new_name = (message.text or "renamed").strip()
-    with SESSION_LOCK:
-        data = get_session(uid)["data"]
-        path = data.get("path")
-        ext = data.get("ext", "")
-    # Avoid double extensions; preserve the original extension.
-    if ext and not new_name.lower().endswith(ext.lower()):
-        new_name = new_name + ext
-    try:
-        with open(path, "rb") as f:
-            bot.send_document(
-                message.chat.id, f, visible_file_name=new_name,
-                caption=caption_for(uid, f"{ce('gear')}{ce('check')} Renamed to <b>{escape(new_name)}</b> {ce('diamond')}"),
-            )
-        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        safe_remove(path)
-        reset_user_data(uid)
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Please type the company name or 'skip'.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, get_company)
+        return
+    company_val = (
+        message.text.strip()
+        if message.text.strip().lower() not in ['skip', '/skip']
+        else ""
+    )
+    with DATA_LOCK:
+        if message.chat.id in user_data:
+            user_data[message.chat.id]['company'] = company_val
+    bot.send_message(
+        message.chat.id,
+        "4️⃣ **VCF File Starting Number?**\n*(Example: 1)*",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(message.chat.id, get_start_number)
 
-# ============================================================================
-#  🔍 MODULE 7 — ADVANCED VCF DETAILS SCANNER
-# ============================================================================
-def start_get_details(chat_id, uid):
-    with SESSION_LOCK:
-        get_session(uid)["data"] = {"mode": "details"}
-    msg = bot.send_message(chat_id, t(uid, "send_vcf"), reply_markup=home_menu(uid))
-    bot.register_next_step_handler(msg, step_details_file)
 
-def step_details_file(message):
+def get_start_number(message):
+    """Step 4 of Normal Mode: capture the file-index starting number.
+    Validates as a positive integer, defaults to 1 on bad/empty input.
+    Then asks for the split count (Step 5) and hands off to generate_vcf_router."""
     if check_menu_or_commands(message):
         return
-    uid = message.from_user.id
-    if message.content_type != "document" or not (message.document.file_name or "").lower().endswith(".vcf"):
-        msg = bot.send_message(message.chat.id, t(uid, "not_vcf"))
-        bot.register_next_step_handler(msg, step_details_file)
-        return
-
-    in_path = log_path = None
-    try:
-        in_path, orig = download_to_temp(message)
-        with open(in_path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
-        cards = VCARD_RE.findall(raw)
-
-        parsed = []   # list of (name, number)
-        for card in cards:
-            fn = FN_RE.search(card)
-            name = fn.group(1).strip() if fn else "Unknown"
-            tels = TEL_RE.findall(card)
-            num = re.sub(r'[^\d+]', '', tels[0]) if tels else "N/A"
-            parsed.append((name, num))
-
-        total = len(parsed)
-        first_name = parsed[0][0] if parsed else "—"
-        last_name = parsed[-1][0] if parsed else "—"
-
-        # Premium HTML summary of first 50 contacts.
-        preview = parsed[:50]
-        lines = [f"{ce('magnify')}{ce('diamond')} <b>VCF Audit Report</b> {ce('diamond')}\n",
-                 f"{ce('folder')} <b>File:</b> <code>{escape(orig)}</code>",
-                 f"{ce('number')} <b>Total Contacts:</b> <b>{total}</b>",
-                 f"{ce('medal')} <b>First Contact:</b> {escape(first_name)}",
-                 f"{ce('flag')} <b>Last Contact:</b> {escape(last_name)}\n",
-                 f"{ce('eyes')} <b>Preview (first 50):</b>"]
-        for i, (nm, nb) in enumerate(preview, 1):
-            lines.append(f"<code>{i:>3}.</code> {ce('person')} {escape(nm)} — {ce('phone')} <code>{escape(nb)}</code>")
-        report = "\n".join(lines)
-        # Telegram message hard limit ~4096 chars; trim defensively.
-        if len(report) > 3900:
-            report = report[:3900] + f"\n…{ce('scissors')} <i>(truncated — see attached log)</i>"
-        bot.send_message(message.chat.id, report)
-
-        # Full detailed .txt log of ALL names + numbers.
-        log_lines = [f"{i+1}. {nm} -> {nb}" for i, (nm, nb) in enumerate(parsed)]
-        log_path = write_temp("VCF DETAILED LOG\n=================\n" + "\n".join(log_lines) + "\n", ".txt")
-        with open(log_path, "rb") as f:
-            bot.send_document(
-                message.chat.id, f, visible_file_name=f"{os.path.splitext(orig)[0]}_log.txt",
-                caption=caption_for(uid, f"{ce('page')}{ce('check')} Full log of <b>{total}</b> contacts. {ce('diamond')}"),
-            )
-        bot.send_message(message.chat.id, f"{ce('party')} <b>Done!</b>", reply_markup=main_menu(uid))
-    except Exception as e:
-        bot.send_message(message.chat.id, t(uid, "generic_error", e=escape(str(e))), reply_markup=main_menu(uid))
-    finally:
-        safe_remove(in_path)
-        safe_remove(log_path)
-        reset_user_data(uid)
-
-# ============================================================================
-#  🗂️ CATCH-ALL HANDLERS  (idle-state routing / nudges)
-# ============================================================================
-@bot.message_handler(content_types=["text"])
-def catch_all_text(message):
-    """
-    Runs only when no step-handler is active. With the inline UI all navigation
-    happens via callbacks, so free text while idle just gets a gentle nudge back
-    to the premium menu (global commands are handled by their own handlers).
-    """
-    uid = message.from_user.id
-    register_user(uid)
-    bot.send_message(message.chat.id, t(uid, "menu_hint"), reply_markup=main_menu(uid))
-
-@bot.message_handler(content_types=["document", "photo", "audio", "video"])
-def catch_all_files(message):
-    """Files received while idle (no active step) -> remind to pick a module."""
-    uid = message.from_user.id
-    register_user(uid)
-    bot.send_message(message.chat.id, t(uid, "idle_file"), reply_markup=main_menu(uid))
-
-# ============================================================================
-#  🌐 FLASK KEEP-ALIVE WEB SERVER  (24/7 background daemon thread)
-# ============================================================================
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def home():
-    return "💎✨ VCF Pro Bot is alive and running 24/7! 🚀"
-
-@flask_app.route("/health")
-def health():
-    return {"status": "ok", "time": time.time()}
-
-def run_flask():
-    # Render injects a dynamic $PORT and health-checks against it; honor it.
-    # Falls back to 8080 for local runs / other hosts.
-    port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host="0.0.0.0", port=port)
-
-def keep_alive():
-    """Spin up Flask on a daemon background thread for continuous pings."""
-    thread = threading.Thread(target=run_flask, daemon=True)
-    thread.start()
-
-# ============================================================================
-#  🚀 BOOT
-# ============================================================================
-def set_default_commands():
-    cmds = [
-        types.BotCommand("start", "🏠 Open main menu"),
-        types.BotCommand("help", "📖 How to use the bot"),
-        types.BotCommand("cancel", "🛑 Cancel current operation"),
-        types.BotCommand("done", "✅ Finish merge queue"),
-        types.BotCommand("skip", "⏭️ Skip an optional step"),
-        types.BotCommand("caption", "💬 Toggle file captions"),
-        types.BotCommand("ping", "🏓 Latency test"),
-        types.BotCommand("stats", "📊 Bot stats (admin)"),
-        types.BotCommand("broadcast", "📢 Broadcast (admin)"),
-    ]
-    try:
-        bot.set_my_commands(cmds)
-    except Exception as e:
-        log.warning("Could not set commands: %s", e)
-
-if __name__ == "__main__":
-    # --- Fail fast if the token is missing/placeholder (the #1 "no response" cause) ---
-    if not BOT_TOKEN or BOT_TOKEN == "PUT-YOUR-BOT-TOKEN-HERE":
-        raise SystemExit(
-            "\n❌ BOT_TOKEN is not set!\n"
-            "   Add an environment variable named BOT_TOKEN with the token from @BotFather,\n"
-            "   then restart / redeploy. The bot cannot poll Telegram without it.\n"
-        )
-
-    # Start the Flask keep-alive web server (binds Render's $PORT, or 8080 locally).
-    keep_alive()
-
-    # CRITICAL FIX: a previously-set webhook silently blocks getUpdates polling, so the
-    # bot would receive NOTHING from Telegram — this is the usual reason /start gets no
-    # reply at all. Always clear any existing webhook BEFORE we start long-polling.
-    try:
-        bot.remove_webhook()
-        time.sleep(0.5)
-        log.info("Webhook cleared — switching to long-polling.")
-    except Exception as e:
-        log.warning("remove_webhook failed (continuing anyway): %s", e)
-
-    set_default_commands()
-    log.info("💎 VCF Pro Bot (HTML + Animated Emoji) starting (polling)...")
-
-    # Resilient 24/7 polling loop. infinity_polling already auto-recovers from
-    # transient network errors; this outer guard ensures that even a fatal escape
-    # never kills the process silently — it logs and restarts after a short pause.
-    while True:
+    chat_id   = message.chat.id
+    start_num = 1  # safe default
+    if message.text and message.text.strip():
         try:
-            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
-        except Exception as e:
-            msg = str(e)
-            if "409" in msg or "Conflict" in msg or "terminated by other" in msg:
-                # 409 = ANOTHER process is polling this SAME BOT_TOKEN. This is an
-                # environment problem, not a code bug: make sure only ONE instance
-                # runs (one Render service, scaled to 1, and no local/other copy).
-                # We back off long enough for the rival long-poll to expire, then
-                # re-clear the webhook before trying again.
-                log.error(
-                    "409 CONFLICT — another instance is polling this BOT_TOKEN. "
-                    "Ensure only ONE instance runs. Backing off 20s... (%s)", msg
-                )
-                try:
-                    bot.remove_webhook()
-                except Exception:
-                    pass
-                time.sleep(20)
-            else:
-                log.error("Polling crashed — restarting in 5s: %s", msg)
-                time.sleep(5)
+            parsed = int(message.text.strip())
+            if parsed > 0:
+                start_num = parsed
+        except (ValueError, TypeError):
+            pass  # default remains 1
+    with DATA_LOCK:
+        if chat_id in user_data:
+            user_data[chat_id]['file_start_idx'] = start_num
+    bot.send_message(
+        chat_id,
+        "5️⃣ **How many contacts per VCF file?**\n*(Safe Margin: 200 - 250)*:",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
+
+
+def generate_vcf_router(message):
+    """Step 5 (final) of Normal Mode: read split count and generate files."""
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please enter a valid number.")
+        bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
+        return
+
+    try:
+        split_count = int(message.text.strip())
+        if split_count <= 0:
+            raise ValueError("Must be positive")
+    except (ValueError, TypeError):
+        bot.send_message(chat_id, "❌ Please enter a valid positive number.")
+        bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
+        return
+
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+        if not data:
+            bot.send_message(chat_id, "❌ Session expired. Please start again from the menu.")
+            return
+        data_snapshot = copy.deepcopy(data)
+        user_data.pop(chat_id, None)
+
+    bot.send_message(chat_id, "<tg-emoji emoji-id=\"5375338737028841420\">🔄</tg-emoji> 🚀 <b>Executing System Generation Block...</b>", parse_mode="HTML")
+
+    # File index starts from the user-supplied value (Step 4); contact index always starts at 1
+    file_idx    = data_snapshot.get('file_start_idx', 1)
+    contact_idx = 1
+    filename    = data_snapshot.get('filename', 'Output')
+    company     = data_snapshot.get('company', '')
+
+    try:
+        numbers = data_snapshot.get('numbers', [])
+        if not numbers:
+            bot.send_message(chat_id, "❌ No contacts collected. Please start again.")
+            return
+        random.shuffle(numbers)
+        prefix = data_snapshot.get('prefix', 'Contact')
+        chunks = [numbers[i:i + split_count] for i in range(0, len(numbers), split_count)]
+
+        for chunk in chunks:
+            vcf_content = ""
+            for num in chunk:
+                c_name       = f"{prefix} {contact_idx}"
+                vcf_content += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
+                if company:
+                    vcf_content += f"ORG:{company}\n"
+                vcf_content += f"TEL;TYPE=CELL:{num}\nEND:VCARD\n"
+                contact_idx += 1
+
+            vcf_file_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+            try:
+                with open(vcf_file_path, "w", encoding="utf-8") as f:
+                    f.write(vcf_content)
+                with open(vcf_file_path, "rb") as f:
+                    bot.send_document(
+                        chat_id, f,
+                        caption=None,
+                        visible_file_name=f"{filename}_{file_idx}.vcf"
+                    )
+            finally:
+                safe_delete_file(vcf_file_path)
+            file_idx += 1
+
+    except Exception as e:
+        logging.error(f"generate_vcf_router error: {e}")
+        bot.send_message(chat_id, f"❌ Generation failed: {e}")
+        return
+
+    lang = user_langs.get(chat_id, 'en')
+    bot.send_message(
+        chat_id,
+        TEXTS[lang]['success'],
+        reply_markup=get_main_menu_keyboard(lang, chat_id),
+        parse_mode="HTML"
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  ADMIN / NAVY DUAL-MODE FLOW
+#  Steps: process_navy_admin_inputs → trigger_navy_step_2
+#         → process_navy_numbers_inputs → proceed_after_collection
+#         → [ask_admin_prefix] → [ask_navy_prefix] → ask_navy_filename
+#         → generate_navy_vcf (internal split limit = DEFAULT_SPLIT_LIMIT)
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_navy_admin_inputs(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+    if not data:
+        return
+
+    extracted = []
+    if message.document:
+        fname = (message.document.file_name or "").lower()
+        if fname.endswith('.txt'):
+            try:
+                file_info = bot.get_file(message.document.file_id)
+                lines     = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore').splitlines()
+                extracted = [
+                    re.sub(r'[^\d\+]', '', l)
+                    for l in lines
+                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
+                ]
+            except Exception as e:
+                logging.error(f"process_navy_admin_inputs file error: {e}")
+        else:
+            bot.send_message(chat_id, "❌ Please send a `.txt` file for admin numbers.")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
+            return
+    elif message.text:
+        if message.text.strip().lower() in ('/skip', '⏭️ skip admin'):
+            with DATA_LOCK:
+                if chat_id in user_data:
+                    user_data[chat_id]['admin_numbers'] = []
+            trigger_navy_step_2(chat_id)
+            return
+        found     = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
+        extracted = [
+            re.sub(r'[^\d\+]', '', n)
+            for n in found
+            if len(re.sub(r'[^\d\+]', '', n)) >= 7
+        ]
+    else:
+        bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
+        return
+
+    with DATA_LOCK:
+        if chat_id in user_data:
+            user_data[chat_id]['admin_numbers'].extend(extracted)
+            user_data[chat_id]['admin_numbers'] = list(dict.fromkeys(user_data[chat_id]['admin_numbers']))
+            count = len(user_data[chat_id]['admin_numbers'])
+        else:
+            return
+
+    markup = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✅ Done Admin", callback_data="done_admin")
+    )
+    bot.send_message(
+        chat_id,
+        f"<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Final Admin:</b> {count}\n✨ Saved!\n\nSend more or click Done Admin:",
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
+
+
+def process_navy_numbers_inputs(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+    if not data:
+        return
+
+    extracted = []
+    if message.document:
+        fname = (message.document.file_name or "").lower()
+        if fname.endswith('.txt'):
+            try:
+                file_info = bot.get_file(message.document.file_id)
+                lines     = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore').splitlines()
+                extracted = [
+                    re.sub(r'[^\d\+]', '', l)
+                    for l in lines
+                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
+                ]
+            except Exception as e:
+                logging.error(f"process_navy_numbers_inputs file error: {e}")
+        else:
+            bot.send_message(chat_id, "❌ Please send a `.txt` file for navy numbers.")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
+            return
+    elif message.text:
+        if message.text.strip().lower() in ('/skip', '⏭️ skip navy'):
+            with DATA_LOCK:
+                if chat_id in user_data:
+                    user_data[chat_id]['navy_numbers'] = []
+            proceed_after_collection(chat_id)
+            return
+        found     = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
+        extracted = [
+            re.sub(r'[^\d\+]', '', n)
+            for n in found
+            if len(re.sub(r'[^\d\+]', '', n)) >= 7
+        ]
+    else:
+        bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
+        return
+
+    with DATA_LOCK:
+        if chat_id in user_data:
+            user_data[chat_id]['navy_numbers'].extend(extracted)
+            user_data[chat_id]['navy_numbers'] = list(dict.fromkeys(user_data[chat_id]['navy_numbers']))
+            count = len(user_data[chat_id]['navy_numbers'])
+        else:
+            return
+
+    markup = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✅ Done Navy", callback_data="done_navy")
+    )
+    bot.send_message(
+        chat_id,
+        f"<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Final Navy:</b> {count}\n✨ Saved!\n\nSend more or click Done Navy:",
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
+
+
+def trigger_navy_step_2(chat_id):
+    markup = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("⏭️ Skip Navy", callback_data="skip_navy")
+    )
+    bot.send_message(
+        chat_id,
+        "⚙️ **Step 2 • Navy Contacts**\n\n📂 Send Navy numbers or files.",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
+
+
+def proceed_after_collection(chat_id):
+    """Called once both Admin and Navy collection (or skips) are finished.
+    Only prompts for a prefix when the respective category actually has numbers.
+    Never asks for split count — DEFAULT_SPLIT_LIMIT is applied internally."""
+    with DATA_LOCK:
+        data      = user_data.get(chat_id, {})
+        has_admin = bool(data.get('admin_numbers'))
+        if not has_admin:
+            # No admin numbers — silently default prefix; no prompt
+            if chat_id in user_data:
+                user_data[chat_id]['admin_prefix'] = 'Admin'
+
+    if has_admin:
+        ask_admin_prefix(chat_id)
+    else:
+        proceed_after_admin_prefix(chat_id)
+
+
+def ask_admin_prefix(chat_id):
+    bot.send_message(
+        chat_id,
+        "<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Step 3 • Admin Name Prefix</b>\n\nWhat should be the name for Admin contacts?\n<i>Example: Admin Target</i>",
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, get_admin_prefix)
+
+
+def proceed_after_admin_prefix(chat_id):
+    with DATA_LOCK:
+        data      = user_data.get(chat_id, {})
+        has_navy  = bool(data.get('navy_numbers'))
+        if not has_navy:
+            if chat_id in user_data:
+                user_data[chat_id]['navy_prefix'] = 'Navy'
+
+    if has_navy:
+        ask_navy_prefix(chat_id)
+    else:
+        ask_navy_filename(chat_id)
+
+
+def ask_navy_prefix(chat_id):
+    bot.send_message(
+        chat_id,
+        "<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Step 4 • Navy Name Prefix</b>\n\nEnter the name for Navy contacts.\n<i>Example: Navy Target</i>",
+        parse_mode="HTML"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, get_navy_prefix)
+
+
+def ask_navy_filename(chat_id):
+    bot.send_message(
+        chat_id,
+        "🔄 **Step 5 • Final VCF Filename**\n\nEnter the name for your generated VCF file.",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, get_navy_filename)
+
+
+def get_admin_prefix(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please type the admin prefix name.")
+        bot.register_next_step_handler_by_chat_id(chat_id, get_admin_prefix)
+        return
+    typed      = message.text.strip()
+    prefix_val = "Admin" if typed.lower() in ('/skip', 'skip', '') else (typed or "Admin")
+    with DATA_LOCK:
+        if chat_id in user_data:
+            user_data[chat_id]['admin_prefix'] = prefix_val
+    proceed_after_admin_prefix(chat_id)
+
+
+def get_navy_prefix(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please type the navy prefix name.")
+        bot.register_next_step_handler_by_chat_id(chat_id, get_navy_prefix)
+        return
+    typed      = message.text.strip()
+    prefix_val = "Navy" if typed.lower() in ('/skip', 'skip', '') else (typed or "Navy")
+    with DATA_LOCK:
+        if chat_id in user_data:
+            user_data[chat_id]['navy_prefix'] = prefix_val
+    ask_navy_filename(chat_id)
+
+
+def get_navy_filename(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please type the file name.")
+        bot.register_next_step_handler_by_chat_id(chat_id, get_navy_filename)
+        return
+    fname = message.text.strip() or "Target_File"
+    with DATA_LOCK:
+        if chat_id not in user_data:
+            bot.send_message(chat_id, "❌ Session expired. Please start again.")
+            return
+        user_data[chat_id]['filename'] = fname
+    bot.send_message(chat_id, "<tg-emoji emoji-id=\"5375338737028841420\">🔄</tg-emoji> 🚀 <b>Executing System Generation Block...</b>", parse_mode="HTML")
+    generate_navy_vcf(chat_id, DEFAULT_SPLIT_LIMIT)
+
+
+def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
+    """Generate Admin/Navy VCF files using an internal fixed split limit.
+    No split-count prompt is ever shown to the user for this module."""
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+        if not data:
+            bot.send_message(chat_id, "❌ Session expired. Please start again from the menu.")
+            return
+        data_snapshot = copy.deepcopy(data)
+        user_data.pop(chat_id, None)
+
+    file_idx    = 1
+    contact_idx = 1
+    filename    = data_snapshot.get('filename', 'Output')
+
+    try:
+        combined_package = []
+        for n in data_snapshot.get('admin_numbers', []):
+            combined_package.append(('admin', n))
+        for n in data_snapshot.get('navy_numbers', []):
+            combined_package.append(('navy', n))
+
+        if not combined_package:
+            bot.send_message(chat_id, "❌ No contacts collected. Please start again.")
+            return
+
+        chunks   = [combined_package[i:i + split_count] for i in range(0, len(combined_package), split_count)]
+        a_prefix = data_snapshot.get('admin_prefix', 'Admin')
+        n_prefix = data_snapshot.get('navy_prefix', 'Navy')
+
+        for chunk in chunks:
+            vcf_content = ""
+            for tag, num in chunk:
+                prefix_to_use = a_prefix if tag == 'admin' else n_prefix
+                c_name        = f"{prefix_to_use} {contact_idx}"
+                vcf_content  += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
+                if tag == 'admin':
+                    vcf_content += "NOTE:Admin VIP Contact\n"
+                vcf_content  += f"TEL;TYPE=CELL:{num}\nEND:VCARD\n"
+                contact_idx  += 1
+
+            vcf_file_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+            try:
+                with open(vcf_file_path, "w", encoding="utf-8") as f:
+                    f.write(vcf_content)
+                with open(vcf_file_path, "rb") as f:
+                    bot.send_document(
+                        chat_id, f,
+                        caption=None,
+                        visible_file_name=f"{filename}_{file_idx}.vcf"
+                    )
+            finally:
+                safe_delete_file(vcf_file_path)
+            file_idx += 1
+
+    except Exception as e:
+        logging.error(f"generate_navy_vcf error: {e}")
+        bot.send_message(chat_id, f"❌ Generation failed: {e}")
+        return
+
+    lang = user_langs.get(chat_id, 'en')
+    bot.send_message(
+        chat_id,
+        TEXTS[lang]['success'],
+        reply_markup=get_main_menu_keyboard(lang, chat_id),
+        parse_mode="HTML"
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  VCF → TEXT MODULE
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_vcf_to_txt(message):
+    if check_menu_or_commands(message):
+        return
+    if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
+        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_vcf_to_txt)
+        return
+
+    txt_path = f"tmp_{message.chat.id}_{uuid.uuid4().hex}.txt"
+    try:
+        file_info   = bot.get_file(message.document.file_id)
+        vcf_data    = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore')
+        raw_numbers = re.findall(r'TEL[^\:]*\:([^\n\r]+)', vcf_data)
+        cleaned     = list(dict.fromkeys([
+            re.sub(r'[^\d\+]', '', n) for n in raw_numbers if n
+        ]))
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(cleaned))
+        with open(txt_path, "rb") as f:
+            bot.send_document(
+                message.chat.id, f,
+                caption=None,
+                visible_file_name=f"Extracted_{message.chat.id}.txt"
+            )
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Error: {e}")
+    finally:
+        safe_delete_file(txt_path)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SPLIT FILE MODULE
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_split_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    if not message.document:
+        bot.send_message(message.chat.id, "❌ Please send a `.vcf` or `.txt` file.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_split_vcf)
+        return
+
+    fname = (message.document.file_name or "").lower()
+    if not (fname.endswith('.vcf') or fname.endswith('.txt')):
+        bot.send_message(message.chat.id, "❌ Please send a `.vcf` or `.txt` file.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_split_vcf)
+        return
+
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        vcf_data  = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore')
+        cards     = re.findall(r'BEGIN:VCARD.*?END:VCARD', vcf_data, re.DOTALL)
+
+        if not cards:
+            bot.send_message(message.chat.id, "❌ No valid vCard entries found in the file. Please check and try again.")
+            with DATA_LOCK:
+                user_data.pop(message.chat.id, None)
+            return
+
+        with DATA_LOCK:
+            user_data[message.chat.id] = {
+                'split_cards':     cards,
+                'split_file_name': message.document.file_name or "file.vcf",
+                'total_contacts':  len(cards)
+            }
+
+        safe_name   = escape_markdown(message.document.file_name or "file.vcf")
+        response_ui = (
+            "🎉 *File Loaded! (.VCF)*\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "📂 *File:* {}\n"
+            "👥 *Total Contacts:* {}\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "🔢 *How many contacts do you want per file?* (e.g., 50, 100)"
+        ).format(safe_name, len(cards))
+
+        bot.send_message(message.chat.id, response_ui, parse_mode="Markdown")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, ask_split_new_name_step)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Load Error: {e}")
+
+
+def ask_split_new_name_step(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please enter a valid number.")
+        bot.register_next_step_handler_by_chat_id(chat_id, ask_split_new_name_step)
+        return
+    try:
+        limit = int(message.text.strip())
+        if limit <= 0:
+            raise ValueError
+        with DATA_LOCK:
+            if chat_id in user_data:
+                user_data[chat_id]['split_limit'] = limit
+    except (ValueError, TypeError):
+        bot.send_message(chat_id, "❌ Enter a valid positive number.")
+        bot.register_next_step_handler_by_chat_id(chat_id, ask_split_new_name_step)
+        return
+
+    with DATA_LOCK:
+        base_name = user_data.get(chat_id, {}).get('split_file_name', 'file.vcf').rsplit('.', 1)[0]
+    safe_base = escape_markdown(base_name)
+    bot.send_message(
+        chat_id,
+        f"🔄 *New File Name?*\n\nType a new name OR send anything to keep old name: `{safe_base}`",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler_by_chat_id(chat_id, execute_split_vcf)
+
+
+def execute_split_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+    if not data:
+        bot.send_message(chat_id, "❌ Session expired. Please start again.")
+        return
+
+    typed_text     = message.text.strip() if message.text else ""
+    old_base       = data['split_file_name'].rsplit('.', 1)[0]
+    final_base_name = typed_text if typed_text else old_base
+
+    bot.send_message(chat_id, "<tg-emoji emoji-id=\"5375338737028841420\">🔄</tg-emoji> 🎬 <i>Splitting File...</i>\n📶 <i>Status: Processing...</i>", parse_mode="HTML")
+
+    cards  = data['split_cards']
+    limit  = data['split_limit']
+    chunks = [cards[i:i + limit] for i in range(0, len(cards), limit)]
+
+    try:
+        for idx, chunk in enumerate(chunks, start=1):
+            chunk_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+            try:
+                with open(chunk_path, 'w', encoding='utf-8') as f:
+                    f.write("\n".join(chunk))
+                with open(chunk_path, 'rb') as f:
+                    bot.send_document(
+                        chat_id, f,
+                        caption=None,
+                        visible_file_name=f"{final_base_name}_Part_{idx}.vcf"
+                    )
+            finally:
+                safe_delete_file(chunk_path)
+        bot.send_message(chat_id, "🎉 **File Splitting Completed!** 🥳", parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed: {e}")
+    finally:
+        with DATA_LOCK:
+            user_data.pop(chat_id, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MERGE FILE MODULE
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_merge_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+
+    if message.text and message.text.strip() in ["/done", "✅ Done"]:
+        with DATA_LOCK:
+            files = list(merge_storage.get(chat_id, []))
+        if not files:
+            bot.send_message(chat_id, "❌ Queue Empty. Please send at least 1 file.")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
+            return
+        bot.send_message(
+            chat_id,
+            "<tg-emoji emoji-id=\"5375338737028841420\">🔄</tg-emoji> 🎬 <i>Merging Files</i>\n\n📁 Total Files: {}\n📶 <i>Status: Processing...</i>".format(len(files)),
+            parse_mode="HTML"
+        )
+        bot.send_message(
+            chat_id,
+            "📝 **Send Merged File Name:**\n(Example: All_Contacts_Merged)\n*Note: .vcf extension added automatically.*",
+            parse_mode="Markdown"
+        )
+        bot.register_next_step_handler_by_chat_id(chat_id, execute_merge_vcf)
+        return
+
+    if message.document:
+        fname = (message.document.file_name or "").lower()
+        if fname.endswith('.vcf') or fname.endswith('.txt'):
+            with DATA_LOCK:
+                if chat_id not in merge_storage:
+                    merge_storage[chat_id] = []
+                merge_storage[chat_id].append(message.document.file_id)
+                count = len(merge_storage[chat_id])
+            bot.send_message(
+                chat_id,
+                f"✅ File added! Queue: {count}\nSend next or type /done."
+            )
+            bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
+        else:
+            bot.send_message(chat_id, "❌ Please send a `.vcf` or `.txt` file, or type `/done`.")
+            bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
+    else:
+        bot.send_message(chat_id, "❌ Please send a `.vcf` or `.txt` file, or type `/done`.")
+        bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
+
+
+def execute_merge_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        files = list(merge_storage.get(chat_id, []))
+    if not files:
+        bot.send_message(chat_id, "❌ No files in queue. Please start again.")
+        return
+
+    target_name = ((message.text.strip() if message.text else "") or "Merged_Output") + ".vcf"
+    disk_path   = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+    try:
+        merged_content = ""
+        for f_id in files:
+            f_info          = bot.get_file(f_id)
+            merged_content += (
+                bot.download_file(f_info.file_path).decode('utf-8', errors='ignore').strip() + "\n"
+            )
+        with open(disk_path, 'w', encoding='utf-8') as f:
+            f.write(merged_content)
+        with open(disk_path, 'rb') as f:
+            bot.send_document(
+                chat_id, f,
+                caption=None,
+                visible_file_name=target_name
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Error: {e}")
+    finally:
+        safe_delete_file(disk_path)
+        with DATA_LOCK:
+            merge_storage.pop(chat_id, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  VCF EDITOR MODULE
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_editor_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
+        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_editor_vcf)
+        return
+    with DATA_LOCK:
+        user_data[message.chat.id] = {
+            'edit_file_id':   message.document.file_id,
+            'edit_file_name': message.document.file_name
+        }
+    lang = user_langs.get(message.chat.id, 'en')
+    bot.send_message(message.chat.id, TEXTS[lang]['ask_new_prefix'])
+    bot.register_next_step_handler_by_chat_id(message.chat.id, execute_editor_vcf)
+
+
+def execute_editor_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please type the new prefix name.")
+        bot.register_next_step_handler_by_chat_id(chat_id, execute_editor_vcf)
+        return
+
+    new_prefix  = message.text.strip() or "Contact"
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+    if not data:
+        bot.send_message(chat_id, "❌ Session expired. Please start again.")
+        return
+
+    edited_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+    try:
+        file_info = bot.get_file(data['edit_file_id'])
+        vcf_data  = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore')
+        cards     = re.findall(r'BEGIN:VCARD.*?END:VCARD', vcf_data, re.DOTALL)
+        edited    = ""
+        for idx, card in enumerate(cards, start=1):
+            card    = re.sub(r'FN:[^\n\r]*',  f'FN:{new_prefix} {idx}',      card)
+            card    = re.sub(r'N:[^\n\r]*',   f'N:;{new_prefix} {idx};;;',   card)
+            edited += card + "\n"
+        with open(edited_path, 'w', encoding='utf-8') as f:
+            f.write(edited)
+        with open(edited_path, 'rb') as f:
+            bot.send_document(
+                chat_id, f,
+                caption=None,
+                visible_file_name=f"Edited_{data['edit_file_name']}"
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed: {e}")
+    finally:
+        safe_delete_file(edited_path)
+        with DATA_LOCK:
+            user_data.pop(chat_id, None)
+
+
+# ══════════════════════════════════════════════════════════��═════════════════════
+#  RENAME FILE MODULE
+# ═══════════════════════════════════════════���════════════════════════════════════
+
+def process_rename_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    if not message.document or not message.document.file_name:
+        bot.send_message(message.chat.id, "❌ Please upload ANY file to change its name.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_rename_vcf)
+        return
+    with DATA_LOCK:
+        user_data[message.chat.id] = {
+            'rename_file_id': message.document.file_id,
+            'orig_ext':       message.document.file_name.rsplit('.', 1)[-1]
+        }
+    bot.send_message(message.chat.id, "📝 **Enter Target Name:**", parse_mode="Markdown")
+    bot.register_next_step_handler_by_chat_id(message.chat.id, execute_rename_vcf)
+
+
+def execute_rename_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    chat_id = message.chat.id
+    with DATA_LOCK:
+        data = user_data.get(chat_id)
+    if not data:
+        return
+
+    if not message.text:
+        bot.send_message(chat_id, "❌ Please type the new file name.")
+        bot.register_next_step_handler_by_chat_id(chat_id, execute_rename_vcf)
+        return
+
+    new_name  = (message.text.strip() or "Renamed_File") + f".{data['orig_ext']}"
+    disk_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.{data['orig_ext']}"
+    try:
+        file_info = bot.get_file(data['rename_file_id'])
+        with open(disk_path, 'wb') as f:
+            f.write(bot.download_file(file_info.file_path))
+        with open(disk_path, 'rb') as f:
+            bot.send_document(
+                chat_id, f,
+                caption=None,
+                visible_file_name=new_name
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed: {e}")
+    finally:
+        safe_delete_file(disk_path)
+        with DATA_LOCK:
+            user_data.pop(chat_id, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  VCF DETAILS SCANNER MODULE
+# ════════════════════════════════════════════════════════════════════════════════
+
+def process_details_vcf(message):
+    if check_menu_or_commands(message):
+        return
+    if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
+        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, process_details_vcf)
+        return
+
+    chat_id = message.chat.id
+    bot.send_message(
+        chat_id,
+        "<tg-emoji emoji-id=\"5375338737028841420\">🔄</tg-emoji> 📶 <i>Analyzing {}... Please wait!</i>".format(escape_markdown(message.document.file_name or "")),
+        parse_mode="HTML"
+    )
+
+    disk_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.txt"
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        vcf_data  = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore')
+
+        vcards         = re.findall(r'BEGIN:VCARD.*?END:VCARD', vcf_data, re.DOTALL)
+        total_contacts = len(vcards)
+
+        extracted_list = []
+        for idx, card in enumerate(vcards, start=1):
+            fn_match  = re.search(r'FN:(.*)',        card)
+            tel_match = re.search(r'TEL[^\:]*\:(.*)', card)
+            name      = fn_match.group(1).strip()  if fn_match  else f"Contact {idx}"
+            phone     = tel_match.group(1).strip() if tel_match else "No Number"
+            phone     = re.sub(r'[^\d\+]', '', phone)
+            extracted_list.append(f"{idx}. 👤 {name}\n   📞 {phone}")
+
+        items_to_show = extracted_list[:50]
+        total_pages   = max(1, -(-total_contacts // 50))
+        shown_count   = len(items_to_show)
+
+        start_name = end_name = "None"
+        if vcards:
+            m          = re.search(r'FN:(.*)', vcards[0])
+            start_name = m.group(1).strip() if m else "None"
+            m          = re.search(r'FN:(.*)', vcards[-1])
+            end_name   = m.group(1).strip() if m else "None"
+
+        safe_fname      = escape_markdown(message.document.file_name or "")
+        safe_start_name = escape_markdown(start_name)
+        safe_end_name   = escape_markdown(end_name)
+
+        report_header = (
+            "🔍 *VCF ANALYSIS • PAGE 1/{}*\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "📂 *File:* {}\n"
+            "👥 *Total:* {} Contacts\n"
+            "📊 *Range:* Contact 1 to {}\n"
+            "🏁 *Start:* {}\n"
+            "🛑 *End:* {}\n"
+            "━━━━━━━━━━━━━━━━━━━\n\n"
+        ).format(total_pages, safe_fname, total_contacts, shown_count, safe_start_name, safe_end_name)
+
+        escaped_items    = [escape_markdown(item) for item in items_to_show]
+        full_report_msg  = report_header + "\n".join(escaped_items)
+
+        if len(full_report_msg) > 4000:
+            full_report_msg = full_report_msg[:3900] + "\n\n...[List truncated for chat view]..."
+
+        bot.send_message(chat_id, full_report_msg, parse_mode="Markdown")
+
+        txt_filename = (message.document.file_name or "details").rsplit('.', 1)[0] + "_details.txt"
+        with open(disk_path, "w", encoding="utf-8") as f:
+            f.write(
+                f"Full Report for VCF: {message.document.file_name}\n"
+                f"Total Contacts: {total_contacts}\n\n"
+            )
+            f.write("\n".join(extracted_list))
+
+        with open(disk_path, "rb") as f:
+            bot.send_document(
+                chat_id, f,
+                caption=None,
+                visible_file_name=txt_filename
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Analysis Error: {e}")
+    finally:
+        safe_delete_file(disk_path)
+        with DATA_LOCK:
+            user_data.pop(chat_id, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  BOT COMMANDS REGISTRATION & POLLING
+# ════════════════════════════════════════════════════════════════════════════════
+
+bot.set_my_commands([
+    BotCommand("start",     "🚀 Restart Bot"),
+    BotCommand("help",      "ℹ️ How To Use?"),
+    BotCommand("done",      "✅ After Upload File"),
+    BotCommand("skip",      "⏭️ Skip For Admin/Navy"),
+    BotCommand("caption",   "⚠️ Caption ON/OFF"),
+    BotCommand("cancel",    "🚫 Cancel Process"),
+    BotCommand("ping",      "🏓 Ping & Bot Speed"),
+    BotCommand("stats",     "📊 Bot Statistics"),
+    BotCommand("broadcast", "📢 Broadcast Message (Admin Only)")
+])
+
+bot.infinity_polling(skip_pending=True)
