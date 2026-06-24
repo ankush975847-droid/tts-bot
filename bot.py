@@ -106,11 +106,11 @@ TEXTS = {
         'ask_split_limit': '🔢 Contacts per split file?:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Merge File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Upload multiple <code>.vcf</code> or <code>.txt</code> files to merge them together...',
         'merge_added': '✅ File added! Queue: {count}\nSend next file or type /done to merge.',
-        'no_merge_files': '❌ Empty queue. Please send at least one `.vcf` file before typing /done.',
+        'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> Empty queue. Please send at least one `.vcf` file before typing /done.',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> Merging...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Editor Module</b>\n\nPlease send the <code>.vcf</code> file:',
         'ask_new_prefix': '<tg-emoji emoji-id="5258500400918587241">✍️</tg-emoji> Enter New Prefix Name:',
-        'cancelled': '❌ Cancelled.',
+        'cancelled': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> Cancelled.',
         'b_txt2vcf': 'Text/Excel to VCF',
         'b_vcf2txt': 'VCF to Text',
         'b_navy': 'Admin/Navy VCF',
@@ -137,11 +137,11 @@ TEXTS = {
         'ask_split_limit': '🔢 प्रत्येक स्प्लिट फ़ाइल में कितने कॉन्टैक्ट्स चाहिए?:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Merge File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> आपस में जोड़ने के लिए कई <code>.vcf</code> या <code>.txt</code> फ़ाइलें अपलोड करें...',
         'merge_added': '✅ फ़ाइल जुड़ गई! कुल: {count}\nअगली फ़ाइल भेजें या मर्ज करने के लिए /done लिखें।',
-        'no_merge_files': '❌ सूची खाली है। /done भेजने से पहले कृपया कम से कम एक `.vcf` फ़ाइल ज़रूर भेजें।',
+        'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> सूची खाली है। /done भेजने से पहले कृपया कम से कम एक `.vcf` फ़ाइल ज़रूर भेजें।',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> फ़ाइलों को जोड़ा जा रहा है...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Editor Module</b>\n\nकृपया <code>.vcf</code> फ़ाइल भेजें:',
         'ask_new_prefix': '<tg-emoji emoji-id="5258500400918587241">✍️</tg-emoji> नया प्रीफिक्स नाम दर्ज करें:',
-        'cancelled': '❌ प्रक्रिया रद्द कर दी गई है।',
+        'cancelled': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> प्रक्रिया रद्द कर दी गई है।',
         'b_txt2vcf': 'टेक्स्ट/एक्सेल को VCF',
         'b_vcf2txt': 'VCF को टेक्स्ट बदलें',
         'b_navy': 'Admin/Navy VCF',
@@ -168,11 +168,11 @@ TEXTS = {
         'ask_split_limit': '🔢 每个拆分文件的联系人数量？:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>合并文件模块</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> 上传多个 <code>.vcf</code> 或 <code>.txt</code> 文件以将它们合并在一起...',
         'merge_added': '✅ 文件已添加！当前队列: {count}\n发送下一个文件或输入 /done 进行合并。',
-        'no_merge_files': '❌ 队列为空。在输入 /done 之前，请至少发送一个 `.vcf` 文件。',
+        'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> 队列为空。在输入 /done 之前，请至少发送一个 `.vcf` 文件。',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> 正在合并...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF 编辑器模块</b>\n\n请发送 <code>.vcf</code> 文件:',
         'ask_new_prefix': '<tg-emoji emoji-id="5258500400918587241">✍️</tg-emoji> 输入新的前缀名称:',
-        'cancelled': '❌ 已取消。',
+        'cancelled': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> 已取消。',
         'b_txt2vcf': '文本/Excel 转 VCF',
         'b_vcf2txt': 'VCF 转 文本',
         'b_navy': '高级 Admin/Navy VCF',
@@ -481,11 +481,11 @@ def broadcast_message(message):
         return
     parts = message.text.split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
-        bot.send_message(message.chat.id, "❌ Please type your message after the command.")
+        bot.send_message(message.chat.id, ERROR_X + " Please type your message after the command.", parse_mode="HTML")
         return
     broadcast_text = parts[1].strip()
     if not os.path.exists("users.txt"):
-        bot.send_message(message.chat.id, "❌ No registered users found (users.txt missing).")
+        bot.send_message(message.chat.id, ERROR_X + " No registered users found (users.txt missing).", parse_mode="HTML")
         return
     with FILE_LOCK:
         with open("users.txt", "r") as f:
@@ -533,7 +533,8 @@ def cancel_command(message):
     bot.send_message(
         chat_id,
         TEXTS[lang]['cancelled'],
-        reply_markup=get_main_menu_keyboard(lang, chat_id)
+        reply_markup=get_main_menu_keyboard(lang, chat_id),
+        parse_mode="HTML"
     )
 
 
@@ -612,7 +613,7 @@ def handle_callbacks(call):
     elif call.data in ("skip_admin", "done_admin"):
         with DATA_LOCK:
             if chat_id not in user_data:
-                bot.send_message(chat_id, "❌ Session expired. Please start again.")
+                bot.send_message(chat_id, ERROR_X + " Session expired. Please start again.", parse_mode="HTML")
                 return
             if call.data == "skip_admin":
                 user_data[chat_id]['admin_numbers'] = []
@@ -621,11 +622,125 @@ def handle_callbacks(call):
     elif call.data in ("skip_navy", "done_navy"):
         with DATA_LOCK:
             if chat_id not in user_data:
-                bot.send_message(chat_id, "❌ Session expired. Please start again.")
+                bot.send_message(chat_id, ERROR_X + " Session expired. Please start again.", parse_mode="HTML")
                 return
             if call.data == "skip_navy":
                 user_data[chat_id]['navy_numbers'] = []
         proceed_after_collection(chat_id)
+
+
+# ══ UNIVERSAL MULTI-FORMAT INPUT / OUTPUT HELPERS ══
+
+ERROR_X = '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji>'
+
+
+def _clean_number(raw):
+    return re.sub(r'[^\d\+]', '', raw or '')
+
+
+def extract_numbers_from_text(text):
+    out = []
+    for n in re.findall(r'\+?\d[\d\-\s]{5,14}\d', text or ''):
+        c = _clean_number(n)
+        if len(c) >= 7:
+            out.append(c)
+    return out
+
+
+def extract_numbers_from_txt_bytes(data):
+    out = []
+    for l in data.decode('utf-8', errors='ignore').splitlines():
+        c = _clean_number(l)
+        if len(c) >= 7:
+            out.append(c)
+    return out
+
+
+def extract_numbers_from_xlsx_bytes(data):
+    out = []
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+    try:
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                for cell in row:
+                    if cell is None:
+                        continue
+                    try:
+                        val = str(cell).strip()
+                    except Exception:
+                        continue
+                    c = _clean_number(val)
+                    if len(c) >= 7:
+                        out.append(c)
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+    return out
+
+
+def extract_numbers_from_vcf_bytes(data):
+    out = []
+    text = data.decode('utf-8', errors='ignore')
+    for n in re.findall(r'TEL[^:]*:([^\r\n]+)', text):
+        c = _clean_number(n)
+        if len(c) >= 7:
+            out.append(c)
+    return out
+
+
+def file_format_from_name(fname):
+    f = (fname or '').lower()
+    if f.endswith('.xlsx'):
+        return 'xlsx'
+    if f.endswith('.vcf'):
+        return 'vcf'
+    if f.endswith('.txt'):
+        return 'txt'
+    return None
+
+
+def extract_numbers_from_document(document):
+    """Download a Telegram document and extract phone numbers.
+    Returns (numbers_list, fmt). Raises ValueError on unsupported type."""
+    fmt = file_format_from_name(document.file_name)
+    if fmt is None:
+        raise ValueError('unsupported')
+    file_info = bot.get_file(document.file_id)
+    data = bot.download_file(file_info.file_path)
+    if fmt == 'txt':
+        return extract_numbers_from_txt_bytes(data), 'txt'
+    if fmt == 'xlsx':
+        return extract_numbers_from_xlsx_bytes(data), 'xlsx'
+    return extract_numbers_from_vcf_bytes(data), 'vcf'
+
+
+def numbers_to_vcf(numbers, prefix='Contact', start_idx=1):
+    content = ''
+    idx = start_idx
+    for num in numbers:
+        c_name = f"{prefix} {idx}"
+        content += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
+        content += f"TEL;TYPE=CELL:{num}\nEND:VCARD\n"
+        idx += 1
+    return content
+
+
+def numbers_to_txt(numbers):
+    return "\n".join(numbers)
+
+
+def numbers_to_xlsx_bytes(numbers):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Contacts'
+    for n in numbers:
+        ws.append([n])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -644,44 +759,20 @@ def process_inputs(message):
         current_list = list(user_data[chat_id]['numbers'])
 
     new_entries = []
-
     if message.document:
-        fname = (message.document.file_name or "").lower()
         try:
-            file_info       = bot.get_file(message.document.file_id)
-            downloaded_file = bot.download_file(file_info.file_path)
-            if fname.endswith('.txt'):
-                lines       = downloaded_file.decode('utf-8', errors='ignore').splitlines()
-                new_entries = [
-                    re.sub(r'[^\d\+]', '', l)
-                    for l in lines
-                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
-                ]
-            elif fname.endswith('.xlsx'):
-                wb = openpyxl.load_workbook(io.BytesIO(downloaded_file), data_only=True)
-                for sheet in wb.worksheets:
-                    for row in sheet.iter_rows(values_only=True):
-                        for cell in row:
-                            val     = str(cell).strip() if cell is not None else ''
-                            cleaned = re.sub(r'[^\d\+]', '', val)
-                            if len(cleaned) >= 7:
-                                new_entries.append(cleaned)
-            else:
-                bot.send_message(chat_id, "❌ Unsupported file type. Please send a `.txt` or `.xlsx` file.")
-                bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
-                return
+            new_entries, _fmt = extract_numbers_from_document(message.document)
+        except ValueError:
+            bot.send_message(chat_id, ERROR_X + ' Unsupported file type. Please send a <code>.txt</code>, <code>.xlsx</code> or <code>.vcf</code> file.', parse_mode='HTML')
+            bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
+            return
         except Exception as e:
-            logging.error(f"process_inputs file error: {e}")
-            bot.send_message(chat_id, f"❌ Could not read file: {e}")
+            logging.error(f'process_inputs file error: {e}')
+            bot.send_message(chat_id, ERROR_X + f' Could not read file: {e}', parse_mode='HTML')
             bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
             return
     elif message.text:
-        found       = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
-        new_entries = [
-            re.sub(r'[^\d\+]', '', n)
-            for n in found
-            if len(re.sub(r'[^\d\+]', '', n)) >= 7
-        ]
+        new_entries = extract_numbers_from_text(message.text)
     else:
         bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
         return
@@ -689,18 +780,18 @@ def process_inputs(message):
     with DATA_LOCK:
         if chat_id not in user_data:
             return
-        merged                      = list(dict.fromkeys(current_list + new_entries))
+        merged = list(dict.fromkeys(current_list + new_entries))
         user_data[chat_id]['numbers'] = merged
-        count                       = len(merged)
+        count = len(merged)
 
     markup = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ Done", callback_data="action_done")
+        InlineKeyboardButton('✅ Done', callback_data='action_done')
     )
     bot.send_message(
         chat_id,
-        f"<tg-emoji emoji-id=\"5443127283898405358\">📥</tg-emoji> Collected: <code>{count}</code> numbers. Send more or click Done:",
+        f'<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Collected: <code>{count}</code> numbers. Send more or click Done:',
         reply_markup=markup,
-        parse_mode="HTML"
+        parse_mode='HTML'
     )
     bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
 
@@ -709,7 +800,7 @@ def get_file_name(message):
     if check_menu_or_commands(message):
         return
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Please type the file name.")
+        bot.send_message(message.chat.id, ERROR_X + " Please type the file name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, get_file_name)
         return
     with DATA_LOCK:
@@ -723,7 +814,7 @@ def get_prefix(message):
     if check_menu_or_commands(message):
         return
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Please type the prefix name.")
+        bot.send_message(message.chat.id, ERROR_X + " Please type the prefix name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, get_prefix)
         return
     with DATA_LOCK:
@@ -741,7 +832,7 @@ def get_company(message):
     if check_menu_or_commands(message):
         return
     if not message.text:
-        bot.send_message(message.chat.id, "❌ Please type the company name or 'skip'.")
+        bot.send_message(message.chat.id, ERROR_X + " Please type the company name or 'skip'.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, get_company)
         return
     company_val = (
@@ -793,7 +884,7 @@ def generate_vcf_router(message):
     chat_id = message.chat.id
 
     if not message.text:
-        bot.send_message(chat_id, "❌ Please enter a valid number.")
+        bot.send_message(chat_id, ERROR_X + " Please enter a valid number.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
         return
 
@@ -802,14 +893,14 @@ def generate_vcf_router(message):
         if split_count <= 0:
             raise ValueError("Must be positive")
     except (ValueError, TypeError):
-        bot.send_message(chat_id, "❌ Please enter a valid positive number.")
+        bot.send_message(chat_id, ERROR_X + " Please enter a valid positive number.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
         return
 
     with DATA_LOCK:
         data = user_data.get(chat_id)
         if not data:
-            bot.send_message(chat_id, "❌ Session expired. Please start again from the menu.")
+            bot.send_message(chat_id, ERROR_X + " Session expired. Please start again from the menu.", parse_mode="HTML")
             return
         data_snapshot = copy.deepcopy(data)
         user_data.pop(chat_id, None)
@@ -825,7 +916,7 @@ def generate_vcf_router(message):
     try:
         numbers = data_snapshot.get('numbers', [])
         if not numbers:
-            bot.send_message(chat_id, "❌ No contacts collected. Please start again.")
+            bot.send_message(chat_id, ERROR_X + " No contacts collected. Please start again.", parse_mode="HTML")
             return
         random.shuffle(numbers)
         prefix = data_snapshot.get('prefix', 'Contact')
@@ -857,7 +948,7 @@ def generate_vcf_router(message):
 
     except Exception as e:
         logging.error(f"generate_vcf_router error: {e}")
-        bot.send_message(chat_id, f"❌ Generation failed: {e}")
+        bot.send_message(chat_id, ERROR_X + f" Generation failed: {e}", parse_mode="HTML")
         return
 
     lang = user_langs.get(chat_id, 'en')
@@ -888,20 +979,15 @@ def process_navy_admin_inputs(message):
 
     extracted = []
     if message.document:
-        fname = (message.document.file_name or "").lower()
-        if fname.endswith('.txt'):
-            try:
-                file_info = bot.get_file(message.document.file_id)
-                lines     = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore').splitlines()
-                extracted = [
-                    re.sub(r'[^\d\+]', '', l)
-                    for l in lines
-                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
-                ]
-            except Exception as e:
-                logging.error(f"process_navy_admin_inputs file error: {e}")
-        else:
-            bot.send_message(chat_id, "❌ Please send a `.txt` file for admin numbers.")
+        try:
+            extracted, _fmt = extract_numbers_from_document(message.document)
+        except ValueError:
+            bot.send_message(chat_id, ERROR_X + ' Please send a <code>.txt</code>, <code>.xlsx</code> or <code>.vcf</code> file for admin numbers.', parse_mode='HTML')
+            bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
+            return
+        except Exception as e:
+            logging.error(f'process_navy_admin_inputs file error: {e}')
+            bot.send_message(chat_id, ERROR_X + f' Could not read file: {e}', parse_mode='HTML')
             bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
             return
     elif message.text:
@@ -911,12 +997,7 @@ def process_navy_admin_inputs(message):
                     user_data[chat_id]['admin_numbers'] = []
             trigger_navy_step_2(chat_id)
             return
-        found     = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
-        extracted = [
-            re.sub(r'[^\d\+]', '', n)
-            for n in found
-            if len(re.sub(r'[^\d\+]', '', n)) >= 7
-        ]
+        extracted = extract_numbers_from_text(message.text)
     else:
         bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
         return
@@ -930,13 +1011,13 @@ def process_navy_admin_inputs(message):
             return
 
     markup = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ Done Admin", callback_data="done_admin")
+        InlineKeyboardButton('✅ Done Admin', callback_data='done_admin')
     )
     bot.send_message(
         chat_id,
-        f"<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Final Admin:</b> {count}\n<tg-emoji emoji-id=\"6285088169817805553\">✨</tg-emoji> Saved!\n\nSend more or click Done Admin:",
+        f'<tg-emoji emoji-id="6026218958900695642">💎</tg-emoji> <b>Final Admin:</b> {count}\n<tg-emoji emoji-id="6285088169817805553">✨</tg-emoji> Saved!\n\nSend more or click Done Admin:',
         reply_markup=markup,
-        parse_mode="HTML"
+        parse_mode='HTML'
     )
     bot.register_next_step_handler_by_chat_id(chat_id, process_navy_admin_inputs)
 
@@ -952,20 +1033,15 @@ def process_navy_numbers_inputs(message):
 
     extracted = []
     if message.document:
-        fname = (message.document.file_name or "").lower()
-        if fname.endswith('.txt'):
-            try:
-                file_info = bot.get_file(message.document.file_id)
-                lines     = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore').splitlines()
-                extracted = [
-                    re.sub(r'[^\d\+]', '', l)
-                    for l in lines
-                    if len(re.sub(r'[^\d\+]', '', l)) >= 7
-                ]
-            except Exception as e:
-                logging.error(f"process_navy_numbers_inputs file error: {e}")
-        else:
-            bot.send_message(chat_id, "❌ Please send a `.txt` file for navy numbers.")
+        try:
+            extracted, _fmt = extract_numbers_from_document(message.document)
+        except ValueError:
+            bot.send_message(chat_id, ERROR_X + ' Please send a <code>.txt</code>, <code>.xlsx</code> or <code>.vcf</code> file for navy numbers.', parse_mode='HTML')
+            bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
+            return
+        except Exception as e:
+            logging.error(f'process_navy_numbers_inputs file error: {e}')
+            bot.send_message(chat_id, ERROR_X + f' Could not read file: {e}', parse_mode='HTML')
             bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
             return
     elif message.text:
@@ -975,12 +1051,7 @@ def process_navy_numbers_inputs(message):
                     user_data[chat_id]['navy_numbers'] = []
             proceed_after_collection(chat_id)
             return
-        found     = re.findall(r'\+?\d[\d\-\s]{5,14}\d', message.text)
-        extracted = [
-            re.sub(r'[^\d\+]', '', n)
-            for n in found
-            if len(re.sub(r'[^\d\+]', '', n)) >= 7
-        ]
+        extracted = extract_numbers_from_text(message.text)
     else:
         bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
         return
@@ -994,13 +1065,13 @@ def process_navy_numbers_inputs(message):
             return
 
     markup = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ Done Navy", callback_data="done_navy")
+        InlineKeyboardButton('✅ Done Navy', callback_data='done_navy')
     )
     bot.send_message(
         chat_id,
-        f"<tg-emoji emoji-id=\"6026218958900695642\">💎</tg-emoji> <b>Final Navy:</b> {count}\n<tg-emoji emoji-id=\"6285088169817805553\">✨</tg-emoji> Saved!\n\nSend more or click Done Navy:",
+        f'<tg-emoji emoji-id="6026218958900695642">💎</tg-emoji> <b>Final Navy:</b> {count}\n<tg-emoji emoji-id="6285088169817805553">✨</tg-emoji> Saved!\n\nSend more or click Done Navy:',
         reply_markup=markup,
-        parse_mode="HTML"
+        parse_mode='HTML'
     )
     bot.register_next_step_handler_by_chat_id(chat_id, process_navy_numbers_inputs)
 
@@ -1082,7 +1153,7 @@ def get_admin_prefix(message):
         return
     chat_id = message.chat.id
     if not message.text:
-        bot.send_message(chat_id, "❌ Please type the admin prefix name.")
+        bot.send_message(chat_id, ERROR_X + " Please type the admin prefix name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, get_admin_prefix)
         return
     typed      = message.text.strip()
@@ -1098,7 +1169,7 @@ def get_navy_prefix(message):
         return
     chat_id = message.chat.id
     if not message.text:
-        bot.send_message(chat_id, "❌ Please type the navy prefix name.")
+        bot.send_message(chat_id, ERROR_X + " Please type the navy prefix name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, get_navy_prefix)
         return
     typed      = message.text.strip()
@@ -1114,13 +1185,13 @@ def get_navy_filename(message):
         return
     chat_id = message.chat.id
     if not message.text:
-        bot.send_message(chat_id, "❌ Please type the file name.")
+        bot.send_message(chat_id, ERROR_X + " Please type the file name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, get_navy_filename)
         return
     fname = message.text.strip() or "Target_File"
     with DATA_LOCK:
         if chat_id not in user_data:
-            bot.send_message(chat_id, "❌ Session expired. Please start again.")
+            bot.send_message(chat_id, ERROR_X + " Session expired. Please start again.", parse_mode="HTML")
             return
         user_data[chat_id]['filename'] = fname
     bot.send_message(chat_id, "<tg-emoji emoji-id=\"6032964711845204323\">🔄</tg-emoji> <tg-emoji emoji-id=\"6129639980387015660\">🚀</tg-emoji> <b>Executing System Generation Block...</b>", parse_mode="HTML")
@@ -1133,7 +1204,7 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
     with DATA_LOCK:
         data = user_data.get(chat_id)
         if not data:
-            bot.send_message(chat_id, "❌ Session expired. Please start again from the menu.")
+            bot.send_message(chat_id, ERROR_X + " Session expired. Please start again from the menu.", parse_mode="HTML")
             return
         data_snapshot = copy.deepcopy(data)
         user_data.pop(chat_id, None)
@@ -1150,7 +1221,7 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
             combined_package.append(('navy', n))
 
         if not combined_package:
-            bot.send_message(chat_id, "❌ No contacts collected. Please start again.")
+            bot.send_message(chat_id, ERROR_X + " No contacts collected. Please start again.", parse_mode="HTML")
             return
 
         chunks   = [combined_package[i:i + split_count] for i in range(0, len(combined_package), split_count)]
@@ -1184,7 +1255,7 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
 
     except Exception as e:
         logging.error(f"generate_navy_vcf error: {e}")
-        bot.send_message(chat_id, f"❌ Generation failed: {e}")
+        bot.send_message(chat_id, ERROR_X + f" Generation failed: {e}", parse_mode="HTML")
         return
 
     lang = user_langs.get(chat_id, 'en')
@@ -1204,7 +1275,7 @@ def process_vcf_to_txt(message):
     if check_menu_or_commands(message):
         return
     if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
-        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.send_message(message.chat.id, ERROR_X + " Please send a valid `.vcf` file.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_vcf_to_txt)
         return
 
@@ -1225,7 +1296,7 @@ def process_vcf_to_txt(message):
                 visible_file_name=f"Extracted_{message.chat.id}.txt"
             )
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Error: {e}")
+        bot.send_message(message.chat.id, ERROR_X + f" Error: {e}", parse_mode="HTML")
     finally:
         safe_delete_file(txt_path)
 
@@ -1237,49 +1308,67 @@ def process_vcf_to_txt(message):
 def process_split_vcf(message):
     if check_menu_or_commands(message):
         return
-    if not message.document:
-        bot.send_message(message.chat.id, "❌ Please send a `.vcf` or `.txt` file.")
-        bot.register_next_step_handler_by_chat_id(message.chat.id, process_split_vcf)
-        return
+    chat_id = message.chat.id
 
-    fname = (message.document.file_name or "").lower()
-    if not (fname.endswith('.vcf') or fname.endswith('.txt')):
-        bot.send_message(message.chat.id, "❌ Please send a `.vcf` or `.txt` file.")
-        bot.register_next_step_handler_by_chat_id(message.chat.id, process_split_vcf)
-        return
+    items = []
+    fmt = None
+    src_name = 'file.vcf'
 
-    try:
-        file_info = bot.get_file(message.document.file_id)
-        vcf_data  = bot.download_file(file_info.file_path).decode('utf-8', errors='ignore')
-        cards     = re.findall(r'BEGIN:VCARD.*?END:VCARD', vcf_data, re.DOTALL)
-
-        if not cards:
-            bot.send_message(message.chat.id, "❌ No valid vCard entries found in the file. Please check and try again.")
-            with DATA_LOCK:
-                user_data.pop(message.chat.id, None)
+    if message.document:
+        fmt = file_format_from_name(message.document.file_name)
+        if fmt is None:
+            bot.send_message(chat_id, ERROR_X + ' Please send a <code>.vcf</code>, <code>.txt</code> or <code>.xlsx</code> file (or paste numbers).', parse_mode='HTML')
+            bot.register_next_step_handler_by_chat_id(chat_id, process_split_vcf)
             return
+        src_name = message.document.file_name or ('file.' + fmt)
+        try:
+            file_info = bot.get_file(message.document.file_id)
+            raw = bot.download_file(file_info.file_path)
+            if fmt == 'vcf':
+                text = raw.decode('utf-8', errors='ignore')
+                items = re.findall(r'BEGIN:VCARD.*?END:VCARD', text, re.DOTALL)
+            elif fmt == 'txt':
+                items = extract_numbers_from_txt_bytes(raw)
+            else:
+                items = extract_numbers_from_xlsx_bytes(raw)
+        except Exception as e:
+            bot.send_message(chat_id, ERROR_X + f' Load Error: {e}', parse_mode='HTML')
+            return
+    elif message.text:
+        fmt = 'text'
+        src_name = 'Pasted_Contacts.vcf'
+        items = extract_numbers_from_text(message.text)
+    else:
+        bot.send_message(chat_id, ERROR_X + ' Please send a <code>.vcf</code>, <code>.txt</code> or <code>.xlsx</code> file (or paste numbers).', parse_mode='HTML')
+        bot.register_next_step_handler_by_chat_id(chat_id, process_split_vcf)
+        return
 
+    if not items:
+        bot.send_message(chat_id, ERROR_X + ' No valid contacts found in the input. Please check and try again.', parse_mode='HTML')
         with DATA_LOCK:
-            user_data[message.chat.id] = {
-                'split_cards':     cards,
-                'split_file_name': message.document.file_name or "file.vcf",
-                'total_contacts':  len(cards)
-            }
+            user_data.pop(chat_id, None)
+        return
 
-        safe_name   = escape_markdown(message.document.file_name or "file.vcf")
-        response_ui = (
-            "🎉 *File Loaded! (.VCF)*\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            "📂 *File:* {}\n"
-            "👥 *Total Contacts:* {}\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            "🔢 *How many contacts do you want per file?* (e.g., 50, 100)"
-        ).format(safe_name, len(cards))
+    with DATA_LOCK:
+        user_data[chat_id] = {
+            'split_items':     items,
+            'split_format':    fmt,
+            'split_file_name': src_name,
+            'total_contacts':  len(items)
+        }
 
-        bot.send_message(message.chat.id, response_ui, parse_mode="Markdown")
-        bot.register_next_step_handler_by_chat_id(message.chat.id, ask_split_new_name_step)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Load Error: {e}")
+    safe_name   = escape_markdown(src_name)
+    response_ui = (
+        '🎉 *File Loaded!*\n'
+        '━━━━━━━━━━━━━━━━━━━\n'
+        '📂 *File:* {}\n'
+        '👥 *Total Contacts:* {}\n'
+        '━━━━━━━━━━━━━━━━━━━\n'
+        '🔢 *How many contacts do you want per file?* (e.g., 50, 100)'
+    ).format(safe_name, len(items))
+
+    bot.send_message(chat_id, response_ui, parse_mode='Markdown')
+    bot.register_next_step_handler_by_chat_id(chat_id, ask_split_new_name_step)
 
 
 def ask_split_new_name_step(message):
@@ -1287,7 +1376,7 @@ def ask_split_new_name_step(message):
         return
     chat_id = message.chat.id
     if not message.text:
-        bot.send_message(chat_id, "❌ Please enter a valid number.")
+        bot.send_message(chat_id, ERROR_X + " Please enter a valid number.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, ask_split_new_name_step)
         return
     try:
@@ -1298,7 +1387,7 @@ def ask_split_new_name_step(message):
             if chat_id in user_data:
                 user_data[chat_id]['split_limit'] = limit
     except (ValueError, TypeError):
-        bot.send_message(chat_id, "❌ Enter a valid positive number.")
+        bot.send_message(chat_id, ERROR_X + " Enter a valid positive number.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, ask_split_new_name_step)
         return
 
@@ -1320,36 +1409,49 @@ def execute_split_vcf(message):
     with DATA_LOCK:
         data = user_data.get(chat_id)
     if not data:
-        bot.send_message(chat_id, "❌ Session expired. Please start again.")
+        bot.send_message(chat_id, ERROR_X + ' Session expired. Please start again.', parse_mode='HTML')
         return
 
-    typed_text     = message.text.strip() if message.text else ""
-    old_base       = data['split_file_name'].rsplit('.', 1)[0]
+    typed_text      = message.text.strip() if message.text else ''
+    old_base        = data['split_file_name'].rsplit('.', 1)[0]
     final_base_name = typed_text if typed_text else old_base
 
-    bot.send_message(chat_id, "<tg-emoji emoji-id=\"6032964711845204323\">🔄</tg-emoji> <tg-emoji emoji-id=\"5375464961822695044\">🎬</tg-emoji> <i>Splitting File...</i>\n<tg-emoji emoji-id=\"6127475690531982315\">📶</tg-emoji> <i>Status: Processing...</i>", parse_mode="HTML")
+    bot.send_message(chat_id, '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji> <i>Splitting File...</i>\n<tg-emoji emoji-id="6127475690531982315">📶</tg-emoji> <i>Status: Processing...</i>', parse_mode='HTML')
 
-    cards  = data['split_cards']
+    items  = data['split_items']
     limit  = data['split_limit']
-    chunks = [cards[i:i + limit] for i in range(0, len(cards), limit)]
+    fmt    = data.get('split_format', 'vcf')
+    chunks = [items[i:i + limit] for i in range(0, len(items), limit)]
+
+    ext = 'txt' if fmt == 'txt' else ('xlsx' if fmt == 'xlsx' else 'vcf')
 
     try:
         for idx, chunk in enumerate(chunks, start=1):
-            chunk_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+            chunk_path = f'tmp_{chat_id}_{uuid.uuid4().hex}.{ext}'
             try:
-                with open(chunk_path, 'w', encoding='utf-8') as f:
-                    f.write("\n".join(chunk))
+                if fmt == 'xlsx':
+                    with open(chunk_path, 'wb') as f:
+                        f.write(numbers_to_xlsx_bytes(chunk))
+                elif fmt == 'txt':
+                    with open(chunk_path, 'w', encoding='utf-8') as f:
+                        f.write(numbers_to_txt(chunk))
+                elif fmt == 'vcf':
+                    with open(chunk_path, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(chunk))
+                else:
+                    with open(chunk_path, 'w', encoding='utf-8') as f:
+                        f.write(numbers_to_vcf(chunk, prefix=(final_base_name or 'Contact')))
                 with open(chunk_path, 'rb') as f:
                     bot.send_document(
                         chat_id, f,
                         caption=None,
-                        visible_file_name=f"{final_base_name}_Part_{idx}.vcf"
+                        visible_file_name=f'{final_base_name}_Part_{idx}.{ext}'
                     )
             finally:
                 safe_delete_file(chunk_path)
-        bot.send_message(chat_id, "🎉 **File Splitting Completed!** 🥳", parse_mode="Markdown")
+        bot.send_message(chat_id, '🎉 <b>File Splitting Completed!</b> 🥳', parse_mode='HTML')
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Failed: {e}")
+        bot.send_message(chat_id, ERROR_X + f' Failed: {e}', parse_mode='HTML')
     finally:
         with DATA_LOCK:
             user_data.pop(chat_id, None)
@@ -1364,44 +1466,45 @@ def process_merge_vcf(message):
         return
     chat_id = message.chat.id
 
-    if message.text and message.text.strip() in ["/done", "✅ Done"]:
+    if message.text and message.text.strip() in ['/done', '✅ Done']:
         with DATA_LOCK:
             files = list(merge_storage.get(chat_id, []))
         if not files:
-            bot.send_message(chat_id, "❌ Queue Empty. Please send at least 1 file.")
+            bot.send_message(chat_id, ERROR_X + ' Queue Empty. Please send at least 1 file.', parse_mode='HTML')
             bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
             return
+        session_fmt = files[0]['fmt']
         bot.send_message(
             chat_id,
-            "<tg-emoji emoji-id=\"6032964711845204323\">🔄</tg-emoji> <tg-emoji emoji-id=\"5375464961822695044\">🎬</tg-emoji> <i>Merging Files</i>\n\n<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> Total Files: {}\n<tg-emoji emoji-id=\"6127475690531982315\">📶</tg-emoji> <i>Status: Processing...</i>".format(len(files)),
-            parse_mode="HTML"
+            '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji> <i>Merging Files</i>\n\n<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> Total Files: {}\n<tg-emoji emoji-id="6127475690531982315">📶</tg-emoji> <i>Status: Processing...</i>'.format(len(files)),
+            parse_mode='HTML'
         )
         bot.send_message(
             chat_id,
-            "<tg-emoji emoji-id=\"5258500400918587241\">✍️</tg-emoji> <b>Send Merged File Name:</b>\n(Example: All_Contacts_Merged)\n<i>Note: .vcf extension added automatically.</i>",
-            parse_mode="HTML"
+            '<tg-emoji emoji-id="5258500400918587241">✍️</tg-emoji> <b>Send Merged File Name:</b>\n(Example: All_Contacts_Merged)\n<i>Note: .{} extension added automatically.</i>'.format(session_fmt),
+            parse_mode='HTML'
         )
         bot.register_next_step_handler_by_chat_id(chat_id, execute_merge_vcf)
         return
 
     if message.document:
-        fname = (message.document.file_name or "").lower()
-        if fname.endswith('.vcf') or fname.endswith('.txt'):
+        fmt = file_format_from_name(message.document.file_name)
+        if fmt is not None:
             with DATA_LOCK:
                 if chat_id not in merge_storage:
                     merge_storage[chat_id] = []
-                merge_storage[chat_id].append(message.document.file_id)
+                merge_storage[chat_id].append({'id': message.document.file_id, 'fmt': fmt})
                 count = len(merge_storage[chat_id])
             bot.send_message(
                 chat_id,
-                f"✅ File added! Queue: {count}\nSend next or type /done."
+                f'✅ File added! Queue: {count}\nSend next or type /done.'
             )
             bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
         else:
-            bot.send_message(chat_id, "❌ Please send a `.vcf` or `.txt` file, or type `/done`.")
+            bot.send_message(chat_id, ERROR_X + ' Please send a <code>.vcf</code>, <code>.txt</code> or <code>.xlsx</code> file, or type /done.', parse_mode='HTML')
             bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
     else:
-        bot.send_message(chat_id, "❌ Please send a `.vcf` or `.txt` file, or type `/done`.")
+        bot.send_message(chat_id, ERROR_X + ' Please send a <code>.vcf</code>, <code>.txt</code> or <code>.xlsx</code> file, or type /done.', parse_mode='HTML')
         bot.register_next_step_handler_by_chat_id(chat_id, process_merge_vcf)
 
 
@@ -1412,20 +1515,39 @@ def execute_merge_vcf(message):
     with DATA_LOCK:
         files = list(merge_storage.get(chat_id, []))
     if not files:
-        bot.send_message(chat_id, "❌ No files in queue. Please start again.")
+        bot.send_message(chat_id, ERROR_X + ' No files in queue. Please start again.', parse_mode='HTML')
         return
 
-    target_name = ((message.text.strip() if message.text else "") or "Merged_Output") + ".vcf"
-    disk_path   = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+    session_fmt = files[0]['fmt']
+    base_name   = (message.text.strip() if message.text else '') or 'Merged_Output'
+    ext         = session_fmt
+    target_name = f'{base_name}.{ext}'
+    disk_path   = f'tmp_{chat_id}_{uuid.uuid4().hex}.{ext}'
     try:
-        merged_content = ""
-        for f_id in files:
-            f_info          = bot.get_file(f_id)
-            merged_content += (
-                bot.download_file(f_info.file_path).decode('utf-8', errors='ignore').strip() + "\n"
-            )
-        with open(disk_path, 'w', encoding='utf-8') as f:
-            f.write(merged_content)
+        if session_fmt == 'vcf':
+            merged_content = ''
+            for item in files:
+                f_info          = bot.get_file(item['id'])
+                merged_content += bot.download_file(f_info.file_path).decode('utf-8', errors='ignore').strip() + '\n'
+            with open(disk_path, 'w', encoding='utf-8') as f:
+                f.write(merged_content)
+        else:
+            all_numbers = []
+            for item in files:
+                f_info = bot.get_file(item['id'])
+                raw    = bot.download_file(f_info.file_path)
+                if item['fmt'] == 'xlsx':
+                    all_numbers.extend(extract_numbers_from_xlsx_bytes(raw))
+                elif item['fmt'] == 'txt':
+                    all_numbers.extend(extract_numbers_from_txt_bytes(raw))
+                else:
+                    all_numbers.extend(extract_numbers_from_vcf_bytes(raw))
+            if session_fmt == 'xlsx':
+                with open(disk_path, 'wb') as f:
+                    f.write(numbers_to_xlsx_bytes(all_numbers))
+            else:
+                with open(disk_path, 'w', encoding='utf-8') as f:
+                    f.write(numbers_to_txt(all_numbers))
         with open(disk_path, 'rb') as f:
             bot.send_document(
                 chat_id, f,
@@ -1433,7 +1555,7 @@ def execute_merge_vcf(message):
                 visible_file_name=target_name
             )
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Error: {e}")
+        bot.send_message(chat_id, ERROR_X + f' Error: {e}', parse_mode='HTML')
     finally:
         safe_delete_file(disk_path)
         with DATA_LOCK:
@@ -1448,7 +1570,7 @@ def process_editor_vcf(message):
     if check_menu_or_commands(message):
         return
     if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
-        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.send_message(message.chat.id, ERROR_X + " Please send a valid `.vcf` file.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_editor_vcf)
         return
     with DATA_LOCK:
@@ -1466,7 +1588,7 @@ def execute_editor_vcf(message):
         return
     chat_id = message.chat.id
     if not message.text:
-        bot.send_message(chat_id, "❌ Please type the new prefix name.")
+        bot.send_message(chat_id, ERROR_X + " Please type the new prefix name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, execute_editor_vcf)
         return
 
@@ -1474,7 +1596,7 @@ def execute_editor_vcf(message):
     with DATA_LOCK:
         data = user_data.get(chat_id)
     if not data:
-        bot.send_message(chat_id, "❌ Session expired. Please start again.")
+        bot.send_message(chat_id, ERROR_X + " Session expired. Please start again.", parse_mode="HTML")
         return
 
     edited_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
@@ -1496,7 +1618,7 @@ def execute_editor_vcf(message):
                 visible_file_name=f"Edited_{data['edit_file_name']}"
             )
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Failed: {e}")
+        bot.send_message(chat_id, ERROR_X + f" Failed: {e}", parse_mode="HTML")
     finally:
         safe_delete_file(edited_path)
         with DATA_LOCK:
@@ -1511,7 +1633,7 @@ def process_rename_vcf(message):
     if check_menu_or_commands(message):
         return
     if not message.document or not message.document.file_name:
-        bot.send_message(message.chat.id, "❌ Please upload ANY file to change its name.")
+        bot.send_message(message.chat.id, ERROR_X + " Please upload ANY file to change its name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_rename_vcf)
         return
     with DATA_LOCK:
@@ -1533,7 +1655,7 @@ def execute_rename_vcf(message):
         return
 
     if not message.text:
-        bot.send_message(chat_id, "❌ Please type the new file name.")
+        bot.send_message(chat_id, ERROR_X + " Please type the new file name.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, execute_rename_vcf)
         return
 
@@ -1550,7 +1672,7 @@ def execute_rename_vcf(message):
                 visible_file_name=new_name
             )
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Failed: {e}")
+        bot.send_message(chat_id, ERROR_X + f" Failed: {e}", parse_mode="HTML")
     finally:
         safe_delete_file(disk_path)
         with DATA_LOCK:
@@ -1565,7 +1687,7 @@ def process_details_vcf(message):
     if check_menu_or_commands(message):
         return
     if not message.document or not (message.document.file_name or "").lower().endswith('.vcf'):
-        bot.send_message(message.chat.id, "❌ Please send a valid `.vcf` file.")
+        bot.send_message(message.chat.id, ERROR_X + " Please send a valid `.vcf` file.", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_details_vcf)
         return
 
@@ -1642,7 +1764,7 @@ def process_details_vcf(message):
                 visible_file_name=txt_filename
             )
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Analysis Error: {e}")
+        bot.send_message(chat_id, ERROR_X + f" Analysis Error: {e}", parse_mode="HTML")
     finally:
         safe_delete_file(disk_path)
         with DATA_LOCK:
