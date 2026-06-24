@@ -92,7 +92,7 @@ def safe_delete_file(path):
 # ── Language Database (EN, HI, ZH) ───────────────────────────────────────────
 TEXTS = {
     'en': {
-        'welcome': '<tg-emoji emoji-id="6161188739969194553">📍</tg-emoji> <b>Welcome!</b> Choose an option from the menu below:',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>User:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>Status:</b> (Premium Unlocked)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> Need help? Send /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>Select a service from the menu below:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nPlease send your <code>.txt</code> or <code>.xlsx</code> file, or <b>paste numbers</b> directly.\n\nType /cancel anytime to return to main menu.',
         'scan_success': '✅ <b>Collecting Contacts</b>\n🔍 Total Added: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> Enter VCF file Name:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> Enter Contact Prefix Name:',
@@ -123,7 +123,7 @@ TEXTS = {
         'ask_details': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Upload a <code>.vcf</code> file to extract names and details...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
     },
     'hi': {
-        'welcome': '<tg-emoji emoji-id="6161188739969194553">📍</tg-emoji> <b>VCF Maker में स्वागत है!</b>\n\nनीचे दिए गए बटन्स में से एक option चुनें:',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>यूज़र:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>स्थिति:</b> (प्रीमियम अनलॉक)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> सहायता चाहिए? /help भेजें\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>नीचे दिए गए मेनू से एक सेवा चुनें:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nकृपया अपनी <code>.txt</code> या एक्सेल फ़ाइल भेजें, या सीधे चैट में नंबर पेस्ट करें।',
         'scan_success': '✅ <b>Collecting Contacts</b>\n🔍 कुल नंबर्स मिले: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> जनरेट होने वाली VCF फ़ाइल का <b>नाम</b> दर्ज करें:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> कॉन्टैक्ट का <b>Prefix Name</b> दर्ज करें:',
@@ -154,7 +154,7 @@ TEXTS = {
         'ask_details': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> विवरण निकालने के लिए कोई भी <code>.vcf</code> फ़ाइल अपलोड करें...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
     },
     'zh': {
-        'welcome': '<tg-emoji emoji-id="6161188739969194553">📍</tg-emoji> <b>欢迎使用 VCF 生成器！</b> 请从下方菜单选择一个选项：',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>用户:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>状态:</b> (高级版已解锁)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> 需要帮助？发送 /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>请从下方菜单选择服务:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>文本/Excel 转 VCF 模块</b>\n\n请发送您的 <code>.txt</code> 或 <code>.xlsx</code> 文件，或者直接<b>粘贴号码</b>。\n\n随时输入 /cancel 可返回主菜单。',
         'scan_success': '✅ **正在收集联系人**\n🔍 已添加总数: {count}\n\n1️⃣ 输入 VCF 文件名称:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> 输入联系人前缀名称:',
@@ -306,7 +306,7 @@ def _dispatch_menu_button(message):
             user_langs[chat_id] = new_lang
         bot.send_message(
             chat_id,
-            TEXTS[new_lang]['welcome'],
+            TEXTS[new_lang]['welcome'].format(message.from_user.first_name),
             reply_markup=get_main_menu_keyboard(new_lang, chat_id),
             parse_mode="HTML"
         )
