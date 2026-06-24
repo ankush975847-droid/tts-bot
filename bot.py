@@ -138,6 +138,37 @@ def ce(name):
         return f'<tg-emoji emoji-id="{eid}">{fb}</tg-emoji>'
     return fb
 
+# ----------------------------------------------------------------------------
+#  🛟 SAFETY NET: never let an invalid custom-emoji ID silence the bot.
+#  If USE_CUSTOM_EMOJI=1 but any custom_emoji_id is invalid/inaccessible,
+#  Telegram rejects the WHOLE message (error: EMOJI_INVALID) — which makes even
+#  /start appear dead. We transparently strip the <tg-emoji> tags (keeping the
+#  fallback glyph) and retry, so messages ALWAYS get delivered no matter what.
+# ----------------------------------------------------------------------------
+_TG_EMOJI_RE = re.compile(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', re.DOTALL)
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+_orig_send_message = bot.send_message
+
+def _safe_send_message(chat_id, text, **kwargs):
+    try:
+        return _orig_send_message(chat_id, text, **kwargs)
+    except Exception as e:
+        emsg = str(e).lower()
+        if any(k in emsg for k in ("emoji", "entities", "custom_emoji", "parse")):
+            # 1st fallback: drop custom-emoji tags, keep glyphs + remaining HTML.
+            try:
+                return _orig_send_message(chat_id, _TG_EMOJI_RE.sub(r'\1', text), **kwargs)
+            except Exception:
+                # 2nd fallback: strip ALL HTML and send as plain text.
+                kw = dict(kwargs)
+                kw["parse_mode"] = None
+                plain = _HTML_TAG_RE.sub('', _TG_EMOJI_RE.sub(r'\1', text))
+                return _orig_send_message(chat_id, plain, **kw)
+        raise
+
+# Route every bot.send_message(...) through the safety net.
+bot.send_message = _safe_send_message
+
 # ============================================================================
 #  🔐 THREAD-SAFETY PRIMITIVES
 # ============================================================================
