@@ -729,6 +729,55 @@ def cmd_skip(message):
     """Global /skip — only meaningful inside steps; otherwise harmless."""
     bot.send_message(message.chat.id, f"{ce('back')} Nothing to skip right now. 😊")
 
+# ----------------------------------------------------------------------------
+#  🪄 /emojiid — REAL custom_emoji_id grabber (the key to live animations)
+# ----------------------------------------------------------------------------
+#  The IDs in CUSTOM_EMOJI are PLACEHOLDERS. Telegram custom-emoji IDs are
+#  account/pack-specific and cannot be invented. Run this command, then send a
+#  message containing your Telegram Premium ANIMATED emoji(s); the bot echoes
+#  each emoji's real custom_emoji_id so you can paste them into CUSTOM_EMOJI.
+#  After filling real IDs, set env USE_CUSTOM_EMOJI=1 and redeploy.
+@bot.message_handler(commands=["emojiid"])
+def cmd_emojiid(message):
+    msg = bot.send_message(
+        message.chat.id,
+        f"{ce('sparkle')}{ce('bulb')} <b>Custom Emoji ID Grabber</b>\n\n"
+        f"Send me a single message containing your Telegram <b>Premium animated emoji(s)</b>, "
+        f"and I'll reply with each one's <code>custom_emoji_id</code> to paste into <code>CUSTOM_EMOJI</code>.\n\n"
+        f"{ce('warn')} You must have Telegram Premium, and you must send the <i>animated</i> emoji "
+        f"(not a normal Unicode one).",
+    )
+    bot.register_next_step_handler(msg, step_emojiid_capture)
+
+def step_emojiid_capture(message):
+    if check_menu_or_commands(message):
+        return
+    uid = message.from_user.id
+    text = message.text or message.caption or ""
+    ents = (message.entities or []) + (message.caption_entities or [])
+    found = []
+    for e in ents:
+        if getattr(e, "type", None) == "custom_emoji":
+            glyph = text[e.offset:e.offset + e.length]
+            found.append((glyph, e.custom_emoji_id))
+    if not found:
+        bot.send_message(
+            message.chat.id,
+            f"{ce('cross')} No custom emoji detected. Make sure you (with Telegram Premium) "
+            f"send the <b>animated</b> emoji, then run /emojiid again.",
+            reply_markup=main_menu(uid),
+        )
+        return
+    lines = [f"{ce('check')}{ce('party')} <b>Found {len(found)} custom emoji:</b>", ""]
+    for glyph, cid in found:
+        lines.append(f"{glyph}  →  <code>{escape(str(cid))}</code>")
+    lines.append("")
+    lines.append(
+        f"{ce('point')} Paste these IDs into the <code>CUSTOM_EMOJI</code> map, then set "
+        f"env <code>USE_CUSTOM_EMOJI=1</code> and redeploy to go live!"
+    )
+    bot.send_message(message.chat.id, "\n".join(lines), reply_markup=main_menu(uid))
+
 # ============================================================================
 #  🧭 INLINE CALLBACK HANDLERS  (menu + language + merge-done)
 # ============================================================================
@@ -1453,5 +1502,22 @@ if __name__ == "__main__":
         try:
             bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception as e:
-            log.error("Polling crashed — restarting in 5s: %s", e)
-            time.sleep(5)
+            msg = str(e)
+            if "409" in msg or "Conflict" in msg or "terminated by other" in msg:
+                # 409 = ANOTHER process is polling this SAME BOT_TOKEN. This is an
+                # environment problem, not a code bug: make sure only ONE instance
+                # runs (one Render service, scaled to 1, and no local/other copy).
+                # We back off long enough for the rival long-poll to expire, then
+                # re-clear the webhook before trying again.
+                log.error(
+                    "409 CONFLICT — another instance is polling this BOT_TOKEN. "
+                    "Ensure only ONE instance runs. Backing off 20s... (%s)", msg
+                )
+                try:
+                    bot.remove_webhook()
+                except Exception:
+                    pass
+                time.sleep(20)
+            else:
+                log.error("Polling crashed — restarting in 5s: %s", msg)
+                time.sleep(5)
