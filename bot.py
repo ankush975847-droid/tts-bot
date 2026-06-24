@@ -94,11 +94,11 @@ TEXTS = {
     'en': {
         'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>Welcome!</b> Choose an option from the menu below:",
         'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nPlease send your <code>.txt</code> or <code>.xlsx</code> file, or <b>paste numbers</b> directly.\n\nType /cancel anytime to return to main menu.",
-        'scan_success':  "✅ **Collecting Contacts**\n🔍 Total Added: {count}\n\n1️⃣ Enter VCF file Name:",
-        'enter_prefix':  "2️⃣ Enter Contact Prefix Name:",
-        'enter_company': "3️⃣ Enter Company Name (or type 'skip'):",
-        'enter_split':   "5️⃣ How many contacts per VCF file?\n💡 *(Safe Margin: 200 - 250)*:",
-        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF Generation Completed Successfully!</b> 💯",
+        'scan_success':  "✅ <b>Collecting Contacts</b>\n🔍 Total Added: {count}\n\n<tg-emoji emoji-id=\"5197397670724912036\">1️⃣</tg-emoji> Enter VCF file Name:",
+        'enter_prefix':  "<tg-emoji emoji-id=\"5197250993296785376\">2️⃣</tg-emoji> Enter Contact Prefix Name:",
+        'enter_company': "<tg-emoji emoji-id=\"5195203805725084605\">3️⃣</tg-emoji> Enter Company Name (or type 'skip'):",
+        'enter_split':   "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> How many contacts per VCF file?\n💡 <i>(Safe Margin: 200 - 250)</i>:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF Generation Completed Successfully!</b> <tg-emoji emoji-id=\"5229085643082056010\">💯</tg-emoji>",
         'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF to Text Module</b>\n\nPlease send your <code>.vcf</code> file.",
         'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> Invalid input or file format. Please try again.",
         'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> Please enter a valid positive number.",
@@ -111,25 +111,25 @@ TEXTS = {
         'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Editor Module</b>\n\nPlease send the <code>.vcf</code> file:",
         'ask_new_prefix':"📝 Enter New Prefix Name:",
         'cancelled':     "❌ Cancelled.",
-        'b_txt2vcf':     "📄 Text/Excel to VCF",
-        'b_vcf2txt':     "📇 VCF to Text",
-        'b_navy':        "👑 Admin/Navy VCF",
-        'b_editor':      "✏️ VCF Editor",
-        'b_merge':       "🔗 Merge File",
-        'b_split':       "✂️ Split File",
-        'b_rename':      "⚙️ Rename File",
-        'b_details':     "🔍 Get VCF Details",
+        'b_txt2vcf':     "Text/Excel to VCF",
+        'b_vcf2txt':     "VCF to Text",
+        'b_navy':        "Admin/Navy VCF",
+        'b_editor':      "VCF Editor",
+        'b_merge':       "Merge File",
+        'b_split':       "Split File",
+        'b_rename':      "Rename File",
+        'b_details':     "Get VCF Details",
         'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Rename File Module</b>\n\n📥 Upload ANY file (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code>, etc.) to change its name instantly.\n\n🔄 <b>Waiting for file...</b>",
         'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n📥 Upload a <code>.vcf</code> file to extract names and details...\n\n🔄 <b>Waiting for file...</b>"
     },
     'hi': {
         'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>VCF Maker में स्वागत है!</b>\n\nनीचे दिए गए बटन्स में से एक option चुनें:",
         'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nकृपया अपनी <code>.txt</code> या एक्सेल फ़ाइल भेजें, या सीधे चैट में नंबर पेस्ट करें।",
-        'scan_success':  "✅ **Collecting Contacts**\n🔍 कुल नंबर्स मिले: {count}\n\n1️⃣ जनरेट होने वाली VCF फ़ाइल का **नाम** दर्ज करें:",
-        'enter_prefix':  "2️⃣ कॉन्टैक्ट का **Prefix Name** दर्ज करें:",
-        'enter_company': "3️⃣ **कंपनी का नाम** दर्ज करें (या 'skip' लिखें):",
-        'enter_split':   "5️⃣ एक VCF फ़ाइल में **कितने कॉन्टैक्ट्स** रखने हैं?\n💡 *(व्हाट्सएप मार्केटिंग मार्जिन: 200 - 250)*:",
-        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF जनरेशन सफलतापूर्वक पूरा हुआ!</b> 💯",
+        'scan_success':  "✅ <b>Collecting Contacts</b>\n🔍 कुल नंबर्स मिले: {count}\n\n<tg-emoji emoji-id=\"5197397670724912036\">1️⃣</tg-emoji> जनरेट होने वाली VCF फ़ाइल का <b>नाम</b> दर्ज करें:",
+        'enter_prefix':  "<tg-emoji emoji-id=\"5197250993296785376\">2️⃣</tg-emoji> कॉन्टैक्ट का <b>Prefix Name</b> दर्ज करें:",
+        'enter_company': "<tg-emoji emoji-id=\"5195203805725084605\">3️⃣</tg-emoji> <b>कंपनी का नाम</b> दर्ज करें (या 'skip' लिखें):",
+        'enter_split':   "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> एक VCF फ़ाइल में <b>कितने कॉन्टैक्ट्स</b> रखने हैं?\n💡 <i>(व्हाट्सएप मार्केटिंग मार्जिन: 200 - 250)</i>:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF जनरेशन सफलतापूर्वक पूरा हुआ!</b> <tg-emoji emoji-id=\"5229085643082056010\">💯</tg-emoji>",
         'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF to Text Module</b>\n\nकृपया अपनी <code>.vcf</code> फ़ाइल भेजें।",
         'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> गलत इनपुट या फ़ाइल फॉर्मेट। कृपया पुनः प्रयास करें।",
         'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> कृपया एक सही और सकारात्मक संख्या (नंबर) दर्ज करें।",
@@ -142,14 +142,14 @@ TEXTS = {
         'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Editor Module</b>\n\nकृपया <code>.vcf</code> फ़ाइल भेजें:",
         'ask_new_prefix':"📝 नया प्रीफिक्स नाम दर्ज करें:",
         'cancelled':     "❌ प्रक्रिया रद्द कर दी गई है।",
-        'b_txt2vcf':     "📄 टेक्स्ट/एक्सेल को VCF",
-        'b_vcf2txt':     "📇 VCF को टेक्स्ट बदलें",
-        'b_navy':        "👑 Admin/Navy VCF",
-        'b_editor':      "✏️ VCF एडिटर",
-        'b_merge':       "🔗 फाइल मर्ज करें",
-        'b_split':       "✂️ फाइल स्प्लिट करें",
-        'b_rename':      "⚙️ नाम बदलें",
-        'b_details':     "🔍 VCF विवरण प्राप्त करें",
+        'b_txt2vcf':     "टेक्स्ट/एक्सेल को VCF",
+        'b_vcf2txt':     "VCF को टेक्स्ट बदलें",
+        'b_navy':        "Admin/Navy VCF",
+        'b_editor':      "VCF एडिटर",
+        'b_merge':       "फाइल मर्ज करें",
+        'b_split':       "फाइल स्प्लिट करें",
+        'b_rename':      "नाम बदलें",
+        'b_details':     "VCF विवरण प्राप्त करें",
         'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>Rename File Module</b>\n\n📥 नाम बदलने के लिए कोई भी फ़ाइल (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code>, आदि) अपलोड करें।\n\n🔄 <b>Waiting for file...</b>",
         'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n📥 विवरण निकालने के लिए कोई भी <code>.vcf</code> फ़ाइल अपलोड करें...\n\n🔄 <b>Waiting for file...</b>"
     },
@@ -157,10 +157,10 @@ TEXTS = {
         'welcome':       "<tg-emoji emoji-id=\"6161188739969194553\">📍</tg-emoji> 👋 <b>欢迎使用 VCF 生成器！</b> 请从下方菜单选择一个选项：",
         'send_txt':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>文本/Excel 转 VCF 模块</b>\n\n请发送您的 <code>.txt</code> 或 <code>.xlsx</code> 文件，或者直接<b>粘贴号码</b>。\n\n随时输入 /cancel 可返回主菜单。",
         'scan_success':  "✅ **正在收集联系人**\n🔍 已添加总数: {count}\n\n1️⃣ 输入 VCF 文件名称:",
-        'enter_prefix':  "2️⃣ 输入联系人前缀名称:",
-        'enter_company': "3️⃣ 输入公司名称 (或输入 'skip' 跳过):",
-        'enter_split':   "5️⃣ 每个 VCF 文件包含多少个联系人？\n💡 *(安全范围: 200 - 250)*:",
-        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF 文件成功生成！</b> 💯",
+        'enter_prefix':  "<tg-emoji emoji-id=\"5197250993296785376\">2️⃣</tg-emoji> 输入联系人前缀名称:",
+        'enter_company': "<tg-emoji emoji-id=\"5195203805725084605\">3️⃣</tg-emoji> 输入公司名称 (或输入 'skip' 跳过):",
+        'enter_split':   "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> 每个 VCF 文件包含多少个联系人？\n💡 <i>(安全范围: 200 - 250)</i>:",
+        'success':       "<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> <b>VCF 文件成功生成！</b> <tg-emoji emoji-id=\"5229085643082056010\">💯</tg-emoji>",
         'send_vcf':      "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 转 文本模块</b>\n\n请发送您的 <code>.vcf</code> 文件。",
         'invalid_file':  "<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> 输入或文件格式无效。请重试。",
         'invalid_number':"<tg-emoji emoji-id=\"5765005318610228026\">❌</tg-emoji> 请输入有效的正整数。",
@@ -173,14 +173,14 @@ TEXTS = {
         'enter_editor_vcf': "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 编辑器模块</b>\n\n请发送 <code>.vcf</code> 文件:",
         'ask_new_prefix':"📝 输入新的前缀名称:",
         'cancelled':     "❌ 已取消。",
-        'b_txt2vcf':     "📄 文本/Excel 转 VCF",
-        'b_vcf2txt':     "📇 VCF 转 文本",
-        'b_navy':        "👑 高级 Admin/Navy VCF",
-        'b_editor':      "✏️ VCF 编辑器",
-        'b_merge':       "🔗 合并文件",
-        'b_split':       "✂️ 拆分文件",
-        'b_rename':      "⚙️ 重命名文件",
-        'b_details':     "🔍 获取 VCF 详情",
+        'b_txt2vcf':     "文本/Excel 转 VCF",
+        'b_vcf2txt':     "VCF 转 文本",
+        'b_navy':        "高级 Admin/Navy VCF",
+        'b_editor':      "VCF 编辑器",
+        'b_merge':       "合并文件",
+        'b_split':       "拆分文件",
+        'b_rename':      "重命名文件",
+        'b_details':     "获取 VCF 详情",
         'ask_rename':    "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>重命名文件模块</b>\n\n📥 上传任意文件 (<code>.txt</code>, <code>.vcf</code>, <code>.csv</code> 等) 立即修改名称。\n\n🔄 <b>正在等待文件...</b>",
         'ask_details':   "<tg-emoji emoji-id=\"5357315181649076022\">📁</tg-emoji> <b>VCF 详情扫描器</b>\n\n📥 上传 <code>.vcf</code> 文件以提取姓名和详细信息...\n\n🔄 <b>正在等待文件...</b>"
     }
@@ -194,7 +194,7 @@ for _lang in TEXTS:
             ALL_BUTTON_TEXTS.add(_val)
 
 # Language-selector button texts
-LANG_BUTTON_TEXTS = {"🇬🇧 English", "🇮🇳 हिन्दी", "🇨🇳 简体中文"}
+LANG_BUTTON_TEXTS = {"English", "हिन्दी", "简体中文"}
 
 # Combined set: every text that the catch-all handler must treat as a menu event
 ALL_MENU_TEXTS = ALL_BUTTON_TEXTS | LANG_BUTTON_TEXTS
@@ -510,15 +510,15 @@ def send_welcome(message):
     save_user(message.from_user.id)
     markup = ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
     markup.add(
-        KeyboardButton("🇬🇧 English"),
-        KeyboardButton("🇮🇳 हिन्दी"),
-        KeyboardButton("🇨🇳 简体中文")
+        KeyboardButton("English", icon_custom_emoji_id="6023860961725649448"),
+        KeyboardButton("हिन्दी", icon_custom_emoji_id="6129630071897462884"),
+        KeyboardButton("简体中文", icon_custom_emoji_id="5431782733376399004")
     )
     bot.send_message(
         message.chat.id,
-        "🌐 **Select Language / भाषा चुनें / 选择语言:**",
+        "<tg-emoji emoji-id=\"6084845507304229827\">🌎</tg-emoji> <b>Select Language / भाषा चुनें / 选择语言:</b>",
         reply_markup=markup,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -549,7 +549,7 @@ def cancel_command(message):
 #  check_menu_or_commands returns False and we return silently.
 #  That means random text messages while no step-handler is active are
 #  simply ignored (no error spam, no loop), which is correct behavior.
-# ════════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════���═══════════════════════════════════════════════════
 
 @bot.message_handler(func=lambda message: True)
 def handle_menu_and_languages(message):
@@ -606,7 +606,7 @@ def handle_callbacks(call):
             bot.send_message(chat_id, TEXTS[lang]['invalid_file'], parse_mode="HTML")
             bot.register_next_step_handler_by_chat_id(chat_id, process_inputs)
             return
-        bot.send_message(chat_id, "1️⃣ **Enter Final VCF file Name:**", parse_mode="Markdown")
+        bot.send_message(chat_id, "<tg-emoji emoji-id=\"5197397670724912036\">1️⃣</tg-emoji> <b>Enter Final VCF file Name:</b>", parse_mode="HTML")
         bot.register_next_step_handler_by_chat_id(chat_id, get_file_name)
 
     elif call.data in ("skip_admin", "done_admin"):
@@ -715,7 +715,7 @@ def get_file_name(message):
     with DATA_LOCK:
         if message.chat.id in user_data:
             user_data[message.chat.id]['filename'] = message.text.strip() or "Contacts"
-    bot.send_message(message.chat.id, "2️⃣ **Enter Contact Prefix Name:**", parse_mode="Markdown")
+    bot.send_message(message.chat.id, "<tg-emoji emoji-id=\"5197250993296785376\">2️⃣</tg-emoji> <b>Enter Contact Prefix Name:</b>", parse_mode="HTML")
     bot.register_next_step_handler_by_chat_id(message.chat.id, get_prefix)
 
 
@@ -731,8 +731,8 @@ def get_prefix(message):
             user_data[message.chat.id]['prefix'] = message.text.strip() or "Contact"
     bot.send_message(
         message.chat.id,
-        "3️⃣ **Enter Company Name (or type 'skip'):**",
-        parse_mode="Markdown"
+        "<tg-emoji emoji-id=\"5195203805725084605\">3️⃣</tg-emoji> <b>Enter Company Name (or type 'skip'):</b>",
+        parse_mode="HTML"
     )
     bot.register_next_step_handler_by_chat_id(message.chat.id, get_company)
 
@@ -754,8 +754,8 @@ def get_company(message):
             user_data[message.chat.id]['company'] = company_val
     bot.send_message(
         message.chat.id,
-        "4️⃣ **VCF File Starting Number?**\n*(Example: 1)*",
-        parse_mode="Markdown"
+        "<tg-emoji emoji-id=\"5195057239966107210\">4️⃣</tg-emoji> <b>VCF File Starting Number?</b>\n<i>(Example: 1)</i>",
+        parse_mode="HTML"
     )
     bot.register_next_step_handler_by_chat_id(message.chat.id, get_start_number)
 
@@ -780,8 +780,8 @@ def get_start_number(message):
             user_data[chat_id]['file_start_idx'] = start_num
     bot.send_message(
         chat_id,
-        "5️⃣ **How many contacts per VCF file?**\n*(Safe Margin: 200 - 250)*:",
-        parse_mode="Markdown"
+        "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> <b>How many contacts per VCF file?</b>\n<i>(Safe Margin: 200 - 250)</i>:",
+        parse_mode="HTML"
     )
     bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
 
@@ -1357,7 +1357,7 @@ def execute_split_vcf(message):
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  MERGE FILE MODULE
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════��════════════════════════════
 
 def process_merge_vcf(message):
     if check_menu_or_commands(message):
@@ -1660,9 +1660,7 @@ bot.set_my_commands([
     BotCommand("skip",      "⏭️ Skip For Admin/Navy"),
     BotCommand("caption",   "⚠️ Caption ON/OFF"),
     BotCommand("cancel",    "🚫 Cancel Process"),
-    BotCommand("ping",      "🏓 Ping & Bot Speed"),
-    BotCommand("stats",     "📊 Bot Statistics"),
-    BotCommand("broadcast", "📢 Broadcast Message (Admin Only)")
+    BotCommand("ping",      "🏓 Ping & Bot Speed")
 ])
 
 bot.infinity_polling(skip_pending=True)
