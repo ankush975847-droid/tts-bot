@@ -92,9 +92,9 @@ def safe_delete_file(path):
 # ── Language Database (EN, HI, ZH) ───────────────────────────────────────────
 TEXTS = {
     'en': {
-        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>User:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>Status:</b> (Premium Unlocked)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> Need help? Send /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>Select a service from the menu below:</i>',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>User:</b> {}\n<tg-emoji emoji-id="5897772219542541849">⚡</tg-emoji> <b>Status:</b> (Premium Unlocked) <tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji>\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> Need help? Send /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>Select a service from the menu below:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nPlease send your <code>.txt</code> or <code>.xlsx</code> file, or <b>paste numbers</b> directly.\n\nType /cancel anytime to return to main menu.',
-        'scan_success': '✅ <b>Collecting Contacts</b>\n🔍 Total Added: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> Enter VCF file Name:',
+        'scan_success': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> <b>Collecting Contacts</b>\n🔍 Total Added: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> Enter VCF file Name:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> Enter Contact Prefix Name:',
         'enter_company': '<tg-emoji emoji-id="5195203805725084605">3️⃣</tg-emoji> Enter Company Name (or type \'skip\'):',
         'enter_split': '<tg-emoji emoji-id="5195233277790668761">5️⃣</tg-emoji> How many contacts per VCF file?\n💡 <i>(Safe Margin: 200 - 250)</i>:',
@@ -103,9 +103,9 @@ TEXTS = {
         'invalid_file': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> Invalid input or file format. Please try again.',
         'invalid_number': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> Please enter a valid positive number.',
         'send_split_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Split File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Upload ANY <code>.vcf</code> or <code>.txt</code> file to split into smaller parts...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
-        'ask_split_limit': '🔢 Contacts per split file?:',
+        'ask_split_limit': '<tg-emoji emoji-id="5226929552319594190">0️⃣</tg-emoji> Contacts per split file?:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Merge File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Upload multiple <code>.vcf</code> or <code>.txt</code> files to merge them together...',
-        'merge_added': '✅ File added! Queue: {count}\nSend next file or type /done to merge.',
+        'merge_added': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> File added! Queue: {count}\nSend next file or type /done to merge.',
         'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> Empty queue. Please send at least one `.vcf` file before typing /done.',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> Merging...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Editor Module</b>\n\nPlease send the <code>.vcf</code> file:',
@@ -123,9 +123,9 @@ TEXTS = {
         'ask_details': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> Upload a <code>.vcf</code> file to extract names and details...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
     },
     'hi': {
-        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>यूज़र:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>स्थिति:</b> (प्रीमियम अनलॉक)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> सहायता चाहिए? /help भेजें\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>नीचे दिए गए मेनू से एक सेवा चुनें:</i>',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>यूज़र:</b> {}\n<tg-emoji emoji-id="5897772219542541849">⚡</tg-emoji> <b>स्थिति:</b> (प्रीमियम अनलॉक) <tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji>\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> सहायता चाहिए? /help भेजें\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>नीचे दिए गए मेनू से एक सेवा चुनें:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Text/Excel to VCF Module</b>\n\nकृपया अपनी <code>.txt</code> या एक्सेल फ़ाइल भेजें, या सीधे चैट में नंबर पेस्ट करें।',
-        'scan_success': '✅ <b>Collecting Contacts</b>\n🔍 कुल नंबर्स मिले: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> जनरेट होने वाली VCF फ़ाइल का <b>नाम</b> दर्ज करें:',
+        'scan_success': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> <b>Collecting Contacts</b>\n🔍 कुल नंबर्स मिले: {count}\n\n<tg-emoji emoji-id="5197397670724912036">1️⃣</tg-emoji> जनरेट होने वाली VCF फ़ाइल का <b>नाम</b> दर्ज करें:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> कॉन्टैक्ट का <b>Prefix Name</b> दर्ज करें:',
         'enter_company': '<tg-emoji emoji-id="5195203805725084605">3️⃣</tg-emoji> <b>कंपनी का नाम</b> दर्ज करें (या \'skip\' लिखें):',
         'enter_split': '<tg-emoji emoji-id="5195233277790668761">5️⃣</tg-emoji> एक VCF फ़ाइल में <b>कितने कॉन्टैक्ट्स</b> रखने हैं?\n💡 <i>(व्हाट्सएप मार्केटिंग मार्जिन: 200 - 250)</i>:',
@@ -134,9 +134,9 @@ TEXTS = {
         'invalid_file': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> गलत इनपुट या फ़ाइल फॉर्मेट। कृपया पुनः प्रयास करें।',
         'invalid_number': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> कृपया एक सही और सकारात्मक संख्या (नंबर) दर्ज करें।',
         'send_split_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Split File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> स्प्लिट करने के लिए कोई भी <code>.vcf</code> या <code>.txt</code> फ़ाइल अपलोड करें...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
-        'ask_split_limit': '🔢 प्रत्येक स्प्लिट फ़ाइल में कितने कॉन्टैक्ट्स चाहिए?:',
+        'ask_split_limit': '<tg-emoji emoji-id="5226929552319594190">0️⃣</tg-emoji> प्रत्येक स्प्लिट फ़ाइल में कितने कॉन्टैक्ट्स चाहिए?:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>Merge File Module</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> आपस में जोड़ने के लिए कई <code>.vcf</code> या <code>.txt</code> फ़ाइलें अपलोड करें...',
-        'merge_added': '✅ फ़ाइल जुड़ गई! कुल: {count}\nअगली फ़ाइल भेजें या मर्ज करने के लिए /done लिखें।',
+        'merge_added': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> फ़ाइल जुड़ गई! कुल: {count}\nअगली फ़ाइल भेजें या मर्ज करने के लिए /done लिखें.',
         'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> सूची खाली है। /done भेजने से पहले कृपया कम से कम एक `.vcf` फ़ाइल ज़रूर भेजें।',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> फ़ाइलों को जोड़ा जा रहा है...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Editor Module</b>\n\nकृपया <code>.vcf</code> फ़ाइल भेजें:',
@@ -154,9 +154,9 @@ TEXTS = {
         'ask_details': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF Details Scanner</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> विवरण निकालने के लिए कोई भी <code>.vcf</code> फ़ाइल अपलोड करें...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Waiting for file...</b>',
     },
     'zh': {
-        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>用户:</b> {} ⚠️\n<tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji> <b>状态:</b> (高级版已解锁)\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> 需要帮助？发送 /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>请从下方菜单选择服务:</i>',
+        'welcome': '<tg-emoji emoji-id="5461151367559141950">🎉</tg-emoji> <b>WELCOME TO VCF TOOL BOT</b>\n━━━━━━━━━━━━━━━━━━━\n👤 <b>用户:</b> {}\n<tg-emoji emoji-id="5897772219542541849">⚡</tg-emoji> <b>状态:</b> (高级版已解锁) <tg-emoji emoji-id="5429405838345265327">🔓</tg-emoji>\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5803107957767934369">👨‍💻</tg-emoji> <b>Developed By:</b> @MR_MUKUL4 ❞\n━━━━━━━━━━━━━━━━━━━\n<tg-emoji emoji-id="5422439311196834318">💡</tg-emoji> 需要帮助？发送 /help\n<tg-emoji emoji-id="5406745015365943482">⬇️</tg-emoji> <i>请从下方菜单选择服务:</i>',
         'send_txt': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>文本/Excel 转 VCF 模块</b>\n\n请发送您的 <code>.txt</code> 或 <code>.xlsx</code> 文件，或者直接<b>粘贴号码</b>。\n\n随时输入 /cancel 可返回主菜单。',
-        'scan_success': '✅ **正在收集联系人**\n🔍 已添加总数: {count}\n\n1️⃣ 输入 VCF 文件名称:',
+        'scan_success': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> **正在收集联系人**\n🔍 已添加总数: {count}\n\n1️⃣ 输入 VCF 文件名称:',
         'enter_prefix': '<tg-emoji emoji-id="5197250993296785376">2️⃣</tg-emoji> 输入联系人前缀名称:',
         'enter_company': '<tg-emoji emoji-id="5195203805725084605">3️⃣</tg-emoji> 输入公司名称 (或输入 \'skip\' 跳过):',
         'enter_split': '<tg-emoji emoji-id="5195233277790668761">5️⃣</tg-emoji> 每个 VCF 文件包含多少个联系人？\n💡 <i>(��全范围: 200 - 250)</i>:',
@@ -165,9 +165,9 @@ TEXTS = {
         'invalid_file': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> 输入或文件格式无效。请重试。',
         'invalid_number': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> 请输入有效的正整数。',
         'send_split_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>拆分文件模块</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> 上传任意 <code>.vcf</code> 或 <code>.txt</code> 文件以拆分为较小的部分...\n\n<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>正在等待文件...</b>',
-        'ask_split_limit': '🔢 每个拆分文件的联系人数量？:',
+        'ask_split_limit': '<tg-emoji emoji-id="5226929552319594190">0️⃣</tg-emoji> 每个拆分文件的联系人数量？:',
         'send_merge_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>合并文件模块</b>\n\n<tg-emoji emoji-id="5443127283898405358">📥</tg-emoji> 上传多个 <code>.vcf</code> 或 <code>.txt</code> 文件以将它们合并在一起...',
-        'merge_added': '✅ 文件已添加！当前队列: {count}\n发送下一个文件或输入 /done 进行合并。',
+        'merge_added': '<tg-emoji emoji-id="6026257381678124710">✅</tg-emoji> 文件已添加！当前队列: {count}\n发送下一个文件或输入 /done 进行合并。',
         'no_merge_files': '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji> 队列为空。在输入 /done 之前，请至少发送一个 `.vcf` 文件。',
         'merging': '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> 正在合并...',
         'enter_editor_vcf': '<tg-emoji emoji-id="5357315181649076022">📁</tg-emoji> <b>VCF 编辑器模块</b>\n\n请发送 <code>.vcf</code> 文件:',
@@ -404,7 +404,7 @@ def get_main_menu_keyboard(lang, user_id):
 def help_command(message):
     bot.send_message(
         message.chat.id,
-        "⁉️ **How To Use? / 使用说明**\n"
+        "<tg-emoji emoji-id=\"5314504236132747481\">⁉️</tg-emoji> **How To Use? / 使用说明**\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         "• Pick a module from the menu below.\n"
         "• Follow the step-by-step prompts.\n"
