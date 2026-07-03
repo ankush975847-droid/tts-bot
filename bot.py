@@ -384,7 +384,7 @@ def _dispatch_menu_button(message):
         bot.register_next_step_handler_by_chat_id(chat_id, process_excel_to_txt)
 
 
-# ── Main-menu keyboard builder ────────────────────────────────────────────────
+# ── Main-menu keyboard builder ───────────────��─���──────────────────────────────
 
 def get_main_menu_keyboard(lang, user_id):
     from telebot import types
@@ -645,7 +645,10 @@ ERROR_X = '<tg-emoji emoji-id="5765005318610228026">❌</tg-emoji>'
 
 
 def _clean_number(raw):
-    cleaned = re.sub(r'[^\d\+]', '', raw or '')
+    if not raw:
+        return ""
+    cleaned = re.sub(r'[^\d\+]', '', str(raw).strip())
+    cleaned = cleaned.replace(" ", "")
     if cleaned and not cleaned.startswith('+'):
         cleaned = '+' + cleaned
     return cleaned
@@ -653,24 +656,40 @@ def _clean_number(raw):
 
 def extract_numbers_from_text(text):
     out = []
-    for n in re.findall(r'\+?\d[\d\-\s]{5,14}\d', text or ''):
-        c = _clean_number(n)
-        if len(c) >= 7:
-            out.append(c)
+    if not text:
+        return out
+    lines = text.splitlines()
+    for line in lines:
+        token = line.strip()
+        if not token:
+            continue
+        cleaned = _clean_number(token)
+        raw_digits = cleaned.replace('+', '')
+        if len(raw_digits) >= 7:
+            out.append(cleaned)
     return out
 
 
 def extract_numbers_from_txt_bytes(data):
     out = []
-    for l in data.decode('utf-8', errors='ignore').splitlines():
-        c = _clean_number(l)
-        if len(c) >= 7:
-            out.append(c)
+    if not data:
+        return out
+    lines = data.decode('utf-8', errors='ignore').splitlines()
+    for line in lines:
+        token = line.strip()
+        if not token:
+            continue
+        cleaned = _clean_number(token)
+        raw_digits = cleaned.replace('+', '')
+        if len(raw_digits) >= 7:
+            out.append(cleaned)
     return out
 
 
 def extract_numbers_from_xlsx_bytes(data):
     out = []
+    if not data:
+        return out
     wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
     try:
         for sheet in wb.worksheets:
@@ -678,13 +697,10 @@ def extract_numbers_from_xlsx_bytes(data):
                 for cell in row:
                     if cell is None:
                         continue
-                    try:
-                        val = str(cell).strip()
-                    except Exception:
-                        continue
-                    c = _clean_number(val)
-                    if len(c) >= 7:
-                        out.append(c)
+                    cleaned = _clean_number(str(cell).strip())
+                    raw_digits = cleaned.replace('+', '')
+                    if len(raw_digits) >= 7:
+                        out.append(cleaned)
     finally:
         try:
             wb.close()
@@ -697,9 +713,10 @@ def extract_numbers_from_vcf_bytes(data):
     out = []
     text = data.decode('utf-8', errors='ignore')
     for n in re.findall(r'TEL[^:]*:([^\r\n]+)', text):
-        c = _clean_number(n)
-        if len(c) >= 7:
-            out.append(c)
+        cleaned = _clean_number(n.strip())
+        raw_digits = cleaned.replace('+', '')
+        if len(raw_digits) >= 7:
+            out.append(cleaned)
     return out
 
 
@@ -1675,7 +1692,7 @@ def execute_editor_vcf(message):
 
 # ══════════════════════════════════════════════════════════��═════════════════════
 #  RENAME FILE MODULE
-# ═══════════════════════════════════════════���════════════════════════════════════
+# ═══════════════════════════════════════════���═══��════════════════════════════════
 
 def process_rename_vcf(message):
     if check_menu_or_commands(message):
@@ -1727,7 +1744,7 @@ def execute_rename_vcf(message):
             user_data.pop(chat_id, None)
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ═════════��══════════════════════════════════════════════════════════════════════
 #  VCF DETAILS SCANNER MODULE
 # ════════════════════════════════════════════════════════════════════════════════
 
