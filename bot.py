@@ -941,6 +941,8 @@ def generate_vcf_router(message):
     file_idx    = data_snapshot.get('file_start_idx', 1)
     contact_idx = 1
     filename    = data_snapshot.get('filename', 'Output')
+    # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+    filename    = re.sub(r'[\\/:*?"<>|]', '', str(filename))
     company     = data_snapshot.get('company', '')
 
     try:
@@ -1242,6 +1244,8 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
     file_idx    = 1
     contact_idx = 1
     filename    = data_snapshot.get('filename', 'Output')
+    # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+    filename    = re.sub(r'[\\/:*?"<>|]', '', str(filename))
 
     try:
         combined_package = []
@@ -1480,6 +1484,8 @@ def execute_split_vcf(message):
     typed_text      = message.text.strip() if message.text else ''
     old_base        = data['split_file_name'].rsplit('.', 1)[0]
     final_base_name = typed_text if typed_text else old_base
+    # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+    final_base_name = re.sub(r'[\\/:*?"<>|]', '', str(final_base_name))
 
     bot.send_message(chat_id, '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji> <i>Splitting File...</i>\n<tg-emoji emoji-id="6127475690531982315">📶</tg-emoji> <i>Status: Processing...</i>', parse_mode='HTML')
 
@@ -1522,7 +1528,7 @@ def execute_split_vcf(message):
             user_data.pop(chat_id, None)
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════��════════════════════════════════════════════════════
 #  MERGE FILE MODULE
 # ═══════════════════════════════════════════════════��════════════════════════════
 
@@ -1585,6 +1591,8 @@ def execute_merge_vcf(message):
 
     session_fmt = files[0]['fmt']
     base_name   = (message.text.strip() if message.text else '') or 'Merged_Output'
+    # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+    base_name   = re.sub(r'[\\/:*?"<>|]', '', str(base_name))
     ext         = session_fmt
     target_name = f'{base_name}.{ext}'
     disk_path   = f'tmp_{chat_id}_{uuid.uuid4().hex}.{ext}'
@@ -1676,11 +1684,13 @@ def execute_editor_vcf(message):
             edited += card + "\n"
         with open(edited_path, 'w', encoding='utf-8') as f:
             f.write(edited)
+        # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+        clean_edit_name = re.sub(r'[\\/:*?"<>|]', '', str(data['edit_file_name']))
         with open(edited_path, 'rb') as f:
             bot.send_document(
                 chat_id, f,
                 caption=None,
-                visible_file_name=f"Edited_{data['edit_file_name']}"
+                visible_file_name=f"Edited_{clean_edit_name}"
             )
     except Exception as e:
         bot.send_message(chat_id, ERROR_X + f" Failed: {e}", parse_mode="HTML")
@@ -1724,7 +1734,9 @@ def execute_rename_vcf(message):
         bot.register_next_step_handler_by_chat_id(chat_id, execute_rename_vcf)
         return
 
-    new_name  = (message.text.strip() or "Renamed_File") + f".{data['orig_ext']}"
+    # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+    typed_name = re.sub(r'[\\/:*?"<>|]', '', str(message.text.strip() or "Renamed_File"))
+    new_name  = typed_name + f".{data['orig_ext']}"
     disk_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.{data['orig_ext']}"
     try:
         file_info = bot.get_file(data['rename_file_id'])
@@ -1814,7 +1826,9 @@ def process_details_vcf(message):
 
         bot.send_message(chat_id, full_report_msg, parse_mode="Markdown")
 
-        txt_filename = (message.document.file_name or "details").rsplit('.', 1)[0] + "_details.txt"
+        # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
+        clean_base   = re.sub(r'[\\/:*?"<>|]', '', str((message.document.file_name or "details").rsplit('.', 1)[0]))
+        txt_filename = clean_base + "_details.txt"
         with open(disk_path, "w", encoding="utf-8") as f:
             f.write(
                 f"Full Report for VCF: {message.document.file_name}\n"
