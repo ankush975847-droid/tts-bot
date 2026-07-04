@@ -431,7 +431,7 @@ ALL_MENU_TEXTS = ALL_BUTTON_TEXTS | LANG_BUTTON_TEXTS
 #  exclusively from here, never from handle_menu_and_languages directly.
 #  This collapses the execution graph to a single path and eliminates every
 #  possible re-entrancy scenario.
-# ════════════════════════════════════════════════════════════════����═══════════════
+# ════════════════════════════════════════════════════════════════������═══════════════
 
 def check_menu_or_commands(message):
     """Gate-keeper called at the top of every step-handler AND by the catch-all.
@@ -791,7 +791,7 @@ def handle_menu_and_languages(message):
     """Catch-all for menu buttons and language selectors.
 
     ARCHITECTURE NOTE:
-    ─������───────────────
+    ���������───────────────
     This handler is intentionally thin.  It delegates entirely to
     check_menu_or_commands, which handles both routing AND state-clearing
     atomically.  We never call _dispatch_menu_button directly from here —
@@ -1000,7 +1000,7 @@ def numbers_to_xlsx_bytes(numbers):
 #  TEXT/EXCEL → VCF NORMAL MODE FLOW
 #  Steps: process_inputs → get_file_name → get_prefix → get_company
 #         → get_start_number → generate_vcf_router
-# ═══════════════��════════════════════════════════════════════════════════════════
+# ════════════���══��════════════════════════════════════════════════════════════════
 
 def process_inputs(message):
     if check_menu_or_commands(message):
@@ -1179,6 +1179,7 @@ def generate_vcf_router(message):
 
         for idx, chunk in enumerate(chunks, 1):
             vcf_content = ""
+            contact_idx = 1  # Reset naming counter to 1 at the start of EVERY file part
             for num in chunk:
                 c_name       = f"{prefix} {contact_idx}"
                 vcf_content += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
@@ -1503,6 +1504,8 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
         # 2. Loop through chunks sending exactly one sequence flow of documents
         for idx, chunk in enumerate(chunks, 1):
             vcf_content = ""
+            admin_contact_idx = 1  # Reset Admin counter to 1 for every sequential file part
+            navy_contact_idx  = 1  # Reset Navy counter to 1 for every sequential file part
             for tag, num in chunk:
                 if tag == 'admin':
                     c_name        = f"{a_prefix} {admin_contact_idx}"
@@ -1761,11 +1764,19 @@ def execute_split_vcf(message):
                     with open(chunk_path, 'w', encoding='utf-8') as f:
                         f.write(numbers_to_txt(chunk))
                 elif fmt == 'vcf':
+                    # Re-index: pull raw numbers out of this chunk's VCARD blocks and
+                    # rewrite clean contacts so naming resets to 1 for EVERY split part.
+                    chunk_numbers = []
+                    for card in chunk:
+                        for n in re.findall(r'TEL[^:]*:([^\r\n]+)', card):
+                            cleaned = _clean_number(n.strip())
+                            if len(cleaned.replace('+', '')) >= 7:
+                                chunk_numbers.append(cleaned)
                     with open(chunk_path, 'w', encoding='utf-8') as f:
-                        f.write('\n'.join(chunk))
+                        f.write(numbers_to_vcf(chunk_numbers, prefix=(final_base_name or 'Contact'), start_idx=1))
                 else:
                     with open(chunk_path, 'w', encoding='utf-8') as f:
-                        f.write(numbers_to_vcf(chunk, prefix=(final_base_name or 'Contact')))
+                        f.write(numbers_to_vcf(chunk, prefix=(final_base_name or 'Contact'), start_idx=1))
                 with open(chunk_path, 'rb') as f:
                     bot.send_document(
                         chat_id, f,
@@ -1891,7 +1902,7 @@ def execute_merge_vcf(message):
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  VCF EDITOR MODULE
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════��════════════════════
 
 def process_editor_vcf(message):
     if check_menu_or_commands(message):
