@@ -384,7 +384,7 @@ def _dispatch_menu_button(message):
         bot.register_next_step_handler_by_chat_id(chat_id, process_excel_to_txt)
 
 
-# ── Main-menu keyboard builder ───────────────��─�����──────────────────────────────
+# ── Main-menu keyboard builder ───────────────���─�����──────────────────────────────
 
 def get_main_menu_keyboard(lang, user_id):
     from telebot import types
@@ -1240,8 +1240,6 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
         data_snapshot = copy.deepcopy(data)
         user_data.pop(chat_id, None)
 
-    file_idx    = 1
-    contact_idx = 1
     filename    = data_snapshot.get('filename', 'Output')
     # Strip only illegal OS filepath characters (\/:*?"<>|); keep all emojis perfectly intact
     filename    = re.sub(r'[\\/:*?"<>|]', '', str(filename))
@@ -1254,63 +1252,46 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
             bot.send_message(chat_id, ERROR_X + " No contacts collected. Please start again.", parse_mode="HTML")
             return
 
+        # 1. Combine both datasets into a single continuous package stream
+        combined_package = [('admin', n) for n in admin_numbers] + [('navy', n) for n in navy_numbers]
+        chunks = [combined_package[i:i + split_count] for i in range(0, len(combined_package), split_count)]
+
         a_prefix = data_snapshot.get('admin_prefix', 'Admin')
         n_prefix = data_snapshot.get('navy_prefix', 'Navy')
 
-        # ---- ADMIN generation block (independent, indexes reset to 1) ----
-        if admin_numbers:
-            file_idx    = 1
-            contact_idx = 1
-            admin_chunks = [admin_numbers[i:i + split_count] for i in range(0, len(admin_numbers), split_count)]
-            for chunk in admin_chunks:
-                vcf_content = ""
-                for num in chunk:
-                    c_name        = f"{a_prefix} {contact_idx}"
+        file_idx          = 1
+        admin_contact_idx = 1
+        navy_contact_idx  = 1
+
+        # 2. Loop through chunks sending exactly one sequence flow of documents
+        for chunk in chunks:
+            vcf_content = ""
+            for tag, num in chunk:
+                if tag == 'admin':
+                    c_name        = f"{a_prefix} {admin_contact_idx}"
                     vcf_content  += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
                     vcf_content  += "NOTE:Admin VIP Contact\n"
                     vcf_content  += f"TEL;TYPE=CELL:{num}\nEND:VCARD\n"
-                    contact_idx  += 1
-
-                vcf_file_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
-                try:
-                    with open(vcf_file_path, "w", encoding="utf-8") as f:
-                        f.write(vcf_content)
-                    with open(vcf_file_path, "rb") as f:
-                        bot.send_document(
-                            chat_id, f,
-                            caption=None,
-                            visible_file_name=f"{filename}_Admin_{file_idx}.vcf"
-                        )
-                finally:
-                    safe_delete_file(vcf_file_path)
-                file_idx += 1
-
-        # ---- NAVY generation block (independent, indexes reset to 1) ----
-        if navy_numbers:
-            file_idx    = 1
-            contact_idx = 1
-            navy_chunks = [navy_numbers[i:i + split_count] for i in range(0, len(navy_numbers), split_count)]
-            for chunk in navy_chunks:
-                vcf_content = ""
-                for num in chunk:
-                    c_name        = f"{n_prefix} {contact_idx}"
+                    admin_contact_idx += 1
+                else:
+                    c_name        = f"{n_prefix} {navy_contact_idx}"
                     vcf_content  += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name}\nN:;{c_name};;;\n"
                     vcf_content  += f"TEL;TYPE=CELL:{num}\nEND:VCARD\n"
-                    contact_idx  += 1
+                    navy_contact_idx += 1
 
-                vcf_file_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
-                try:
-                    with open(vcf_file_path, "w", encoding="utf-8") as f:
-                        f.write(vcf_content)
-                    with open(vcf_file_path, "rb") as f:
-                        bot.send_document(
-                            chat_id, f,
-                            caption=None,
-                            visible_file_name=f"{filename}_Navy_{file_idx}.vcf"
-                        )
-                finally:
-                    safe_delete_file(vcf_file_path)
-                file_idx += 1
+            vcf_file_path = f"tmp_{chat_id}_{uuid.uuid4().hex}.vcf"
+            try:
+                with open(vcf_file_path, "w", encoding="utf-8") as f:
+                    f.write(vcf_content)
+                with open(vcf_file_path, "rb") as f:
+                    bot.send_document(
+                        chat_id, f,
+                        caption=None,
+                        visible_file_name=f"{filename}_{file_idx}.vcf"
+                    )
+            finally:
+                safe_delete_file(vcf_file_path)
+            file_idx += 1
 
     except Exception as e:
         logging.error(f"generate_navy_vcf error: {e}")
