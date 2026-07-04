@@ -11,9 +11,221 @@ import warnings
 import uuid
 import io
 import copy
+import sqlite3
+import html
 
 FILE_LOCK = threading.Lock()  # Prevents race conditions on users.txt
 DATA_LOCK = threading.Lock()  # Protects all per-user session dictionaries
+DB_LOCK   = threading.Lock()  # Serialises all SQLite access (telebot threaded=True)
+DB_PATH   = "bot_data.db"     # Local persistent SQLite file (auto-created on startup)
+
+# ── SQLite persistence layer ──────────────────────────────────────────
+def init_db():
+    """Create the database file and required tables on startup (idempotent)."""
+    with DB_LOCK:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS users ("
+                "chat_id INTEGER PRIMARY KEY, "
+                "lang TEXT DEFAULT 'en', "
+                "joined_at INTEGER)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS global_stats ("
+                "metric_name TEXT PRIMARY KEY, "
+                "metric_value INTEGER DEFAULT 0)"
+            )
+            for metric in ("total_files_generated", "total_numbers_processed"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO global_stats (metric_name, metric_value) VALUES (?, 0)",
+                    (metric,)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+def register_user(chat_id, lang="en"):
+    """Insert a user row if it does not already exist (keeps existing lang)."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO users (chat_id, lang, joined_at) VALUES (?, ?, ?)",
+                    (int(chat_id), lang, int(time.time()))
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as ex:
+        logging.error(f"register_user error: {ex}")
+
+def get_user_lang(chat_id):
+    """Read a user's language preference from SQLite (defaults to 'en')."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                row = conn.execute(
+                    "SELECT lang FROM users WHERE chat_id = ?", (int(chat_id),)
+                ).fetchone()
+            finally:
+                conn.close()
+        return row[0] if row and row[0] else "en"
+    except Exception as ex:
+        logging.error(f"get_user_lang error: {ex}")
+        return "en"
+
+def set_user_lang(chat_id, lang):
+    """Persist a user's language preference (insert-or-update)."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO users (chat_id, lang, joined_at) VALUES (?, ?, ?)",
+                    (int(chat_id), lang, int(time.time()))
+                )
+                conn.execute(
+                    "UPDATE users SET lang = ? WHERE chat_id = ?", (lang, int(chat_id))
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as ex:
+        logging.error(f"set_user_lang error: {ex}")
+
+def increment_stat(metric_name, amount=1):
+    """Atomically increment a lifetime global counter under lock."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO global_stats (metric_name, metric_value) VALUES (?, 0)",
+                    (metric_name,)
+                )
+                conn.execute(
+                    "UPDATE global_stats SET metric_value = metric_value + ? WHERE metric_name = ?",
+                    (int(amount), metric_name)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as ex:
+        logging.error(f"increment_stat error: {ex}")
+
+def get_stat(metric_name):
+    """Read a lifetime global counter value."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                row = conn.execute(
+                    "SELECT metric_value FROM global_stats WHERE metric_name = ?",
+                    (metric_name,)
+                ).fetchone()
+            finally:
+                conn.close()
+        return row[0] if row else 0
+    except Exception as ex:
+        logging.error(f"get_stat error: {ex}")
+        return 0
+
+def get_total_users():
+    """Count all registered users."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+            finally:
+                conn.close()
+        return row[0] if row else 0
+    except Exception as ex:
+        logging.error(f"get_total_users error: {ex}")
+        return 0
+
+def get_lang_breakdown():
+    """Return [(lang, count), ...] grouped by language preference."""
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                rows = conn.execute(
+                    "SELECT lang, COUNT(*) FROM users GROUP BY lang ORDER BY COUNT(*) DESC"
+                ).fetchall()
+            finally:
+                conn.close()
+        return rows
+    except Exception as ex:
+        logging.error(f"get_lang_breakdown error: {ex}")
+        return []
+
+# ── Premium UI formatting helpers ───────────────────────────────────
+init_db()  # Auto-initialise database + tables the moment the module loads
+
+EMOJI = {
+    "file":    "5357315181649076022",
+    "error":   "5765005318610228026",
+    "refresh": "6032964711845204323",
+    "rocket":  "6129639980387015660",
+    "excel":   "5375464961822695044",
+    "signal":  "6127475690531982315",
+    "check":   "6026257381678124710",
+    "globe":   "6084845507304229827",
+    "chart":   "5433653135799228968",
+    "bulb":    "5422439311196834318",
+    "dev":     "5803107957767934369",
+    "crown":   "5800812959173187710",
+    "star":    "6109340839664686978",
+}
+
+def e(name, fallback=""):
+    """Return a centralised custom-emoji tag with a safe Unicode fallback."""
+    eid = EMOJI.get(name)
+    if not eid:
+        return fallback
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+def render_card(title, rows, footer=None):
+    """Render a premium boxed status card using Telegram-native HTML.
+
+    rows: list of (label, value) tuples for aligned columns, or plain strings
+    for free-form lines. Labels are padded to equal width inside a <pre>
+    block for perfect monospace alignment.
+    """
+    pairs = [r for r in rows if isinstance(r, (list, tuple)) and len(r) == 2]
+    label_w = max((len(str(lbl)) for lbl, _ in pairs), default=0)
+    lines = []
+    for r in rows:
+        if isinstance(r, (list, tuple)) and len(r) == 2:
+            lbl, value = r
+            lines.append(f"{str(lbl).ljust(label_w)} : {value}")
+        else:
+            lines.append(str(r))
+    body = html.escape(chr(10).join(lines))
+    card = f"{title}{chr(10)}<pre>{body}</pre>"
+    if footer:
+        card += f"{chr(10)}<i>{html.escape(str(footer))}</i>"
+    return card
+
+def progress_bar(done, total, width=10):
+    """Return a glyph-block progress bar like ▰▰▰▰▰▱▱▱▱▱ 50%."""
+    if total <= 0:
+        filled, pct = width, 100
+    else:
+        pct = int(round(100 * done / total))
+        filled = int(round(width * done / total))
+    filled = max(0, min(width, filled))
+    return f"{chr(9648) * filled}{chr(9649) * (width - filled)} {pct}%"
+
+GEN_TITLE = '<tg-emoji emoji-id="6032964711845204323">🔄</tg-emoji> <b>Executing System Generation Block...</b>'
+
+def gen_progress_text(done, total):
+    """Compose the in-place generation progress message."""
+    return f"{GEN_TITLE}{chr(10)}<code>{progress_bar(done, total)}</code>"
 
 # ── Core Level Fixes & Requirements ──────────────────────────────────────────
 os.environ['OPENPYXL_LXML'] = 'False'
@@ -70,6 +282,7 @@ def save_user(user_id):
             if str(user_id) not in existing:
                 with open("users.txt", "a") as f:
                     f.write(f"{user_id}\n")
+        register_user(user_id)  # Mirror registration into the persistent SQLite users table
     except Exception as e:
         logging.error(f"Error saving user: {e}")
 
@@ -218,7 +431,7 @@ ALL_MENU_TEXTS = ALL_BUTTON_TEXTS | LANG_BUTTON_TEXTS
 #  exclusively from here, never from handle_menu_and_languages directly.
 #  This collapses the execution graph to a single path and eliminates every
 #  possible re-entrancy scenario.
-# ════════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════����═══════════════
 
 def check_menu_or_commands(message):
     """Gate-keeper called at the top of every step-handler AND by the catch-all.
@@ -300,7 +513,7 @@ def _dispatch_menu_button(message):
     """
     chat_id = message.chat.id
     text    = message.text.strip()
-    lang    = user_langs.get(chat_id, 'en')
+    lang    = get_user_lang(chat_id)
     t       = TEXTS[lang]
 
     # ── Language-selector buttons ─────────────────────────────────────────────
@@ -311,8 +524,7 @@ def _dispatch_menu_button(message):
             new_lang = 'id'
         else:
             new_lang = 'zh'
-        with DATA_LOCK:
-            user_langs[chat_id] = new_lang
+        set_user_lang(chat_id, new_lang)
         bot.send_message(
             chat_id,
             TEXTS[new_lang]['welcome'].format(message.from_user.first_name),
@@ -419,7 +631,7 @@ def get_main_menu_keyboard(lang, user_id):
 @bot.message_handler(commands=['help'])
 def help_command(message):
     chat_id = message.chat.id
-    lang = user_langs.get(chat_id, 'en')
+    lang = get_user_lang(chat_id)
     t = TEXTS.get(lang, TEXTS['en'])
     bot.send_message(
         chat_id,
@@ -469,19 +681,31 @@ def bot_statistics_check(message):
             "⚠️ This information is restricted to the Bot Administrator only."
         )
         return
-    total = 0
-    if os.path.exists("users.txt"):
-        with FILE_LOCK:
-            with open("users.txt", "r") as f:
-                total = len([l for l in f.read().splitlines() if l.strip()])
-    bot.send_message(
-        message.chat.id,
-        f"<tg-emoji emoji-id=\"5800812959173187710\">👑</tg-emoji> <b>Bot Operational Statistics:</b>\n\n"
-        f"👥 Registered Users: <code>{total}</code>\n"
-        f"👑 Channels status: <code>Operational</code>🛡️\n"
-        f"<tg-emoji emoji-id=\"6109340839664686978\">🌟</tg-emoji> ⚙️ Engine Build: <code>v4.5 Live Framework</code>",
-        parse_mode="HTML"
-    )
+    # Pull every metric straight from the persistent SQLite layer
+    total_users = get_total_users()
+    files_gen   = get_stat('total_files_generated')
+    nums_proc   = get_stat('total_numbers_processed')
+    lang_rows   = get_lang_breakdown()
+
+    lang_labels = {'en': 'English', 'id': 'Bahasa', 'zh': '中文'}
+
+    rows = [
+        ("Registered Users", total_users),
+        ("Files Generated",  files_gen),
+        ("Numbers Processed", nums_proc),
+        ("Active Sessions",  len(user_data)),
+        "",
+        "─ Language Breakdown ─",
+    ]
+    if lang_rows:
+        for code, cnt in lang_rows:
+            rows.append((lang_labels.get(code, code or '?'), cnt))
+    else:
+        rows.append("No users registered yet")
+
+    title = f'{e("crown", "👑")} <b>Bot Operational Statistics</b>'
+    card  = render_card(title, rows, footer="Engine Build: v4.5 Live Framework • SQLite Persisted")
+    bot.send_message(message.chat.id, card, parse_mode="HTML")
 
 
 @bot.message_handler(commands=['broadcast'])
@@ -535,7 +759,7 @@ def send_welcome(message):
 @bot.message_handler(commands=['cancel'])
 def cancel_command(message):
     chat_id = message.chat.id
-    lang    = user_langs.get(chat_id, 'en')
+    lang    = get_user_lang(chat_id)
     bot.clear_step_handler_by_chat_id(chat_id=chat_id)
     with DATA_LOCK:
         user_data.pop(chat_id, None)
@@ -567,7 +791,7 @@ def handle_menu_and_languages(message):
     """Catch-all for menu buttons and language selectors.
 
     ARCHITECTURE NOTE:
-    ──────────────────
+    ─������───────────────
     This handler is intentionally thin.  It delegates entirely to
     check_menu_or_commands, which handles both routing AND state-clearing
     atomically.  We never call _dispatch_menu_button directly from here —
@@ -595,7 +819,7 @@ def handle_menu_and_languages(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     chat_id = call.message.chat.id
-    lang    = user_langs.get(chat_id, 'en')
+    lang    = get_user_lang(chat_id)
 
     try:
         bot.answer_callback_query(call.id)
@@ -776,7 +1000,7 @@ def numbers_to_xlsx_bytes(numbers):
 #  TEXT/EXCEL → VCF NORMAL MODE FLOW
 #  Steps: process_inputs → get_file_name → get_prefix → get_company
 #         → get_start_number → generate_vcf_router
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════��════════════════════════════════════════════════════════════════
 
 def process_inputs(message):
     if check_menu_or_commands(message):
@@ -934,7 +1158,7 @@ def generate_vcf_router(message):
         data_snapshot = copy.deepcopy(data)
         user_data.pop(chat_id, None)
 
-    bot.send_message(chat_id, "<tg-emoji emoji-id=\"6032964711845204323\">🔄</tg-emoji> <tg-emoji emoji-id=\"6129639980387015660\">🚀</tg-emoji> <b>Executing System Generation Block...</b>", parse_mode="HTML")
+    prog_msg = bot.send_message(chat_id, gen_progress_text(0, 1), parse_mode="HTML")
 
     # File index starts from the user-supplied value (Step 4); contact index always starts at 1
     file_idx    = data_snapshot.get('file_start_idx', 1)
@@ -953,7 +1177,7 @@ def generate_vcf_router(message):
         prefix = data_snapshot.get('prefix', 'Contact')
         chunks = [numbers[i:i + split_count] for i in range(0, len(numbers), split_count)]
 
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks, 1):
             vcf_content = ""
             for num in chunk:
                 c_name       = f"{prefix} {contact_idx}"
@@ -976,13 +1200,24 @@ def generate_vcf_router(message):
             finally:
                 safe_delete_file(vcf_file_path)
             file_idx += 1
+            try:
+                bot.edit_message_text(
+                    gen_progress_text(idx, len(chunks)),
+                    chat_id, prog_msg.message_id, parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+        # Persist lifetime counters only after all files were built and sent
+        increment_stat('total_files_generated', len(chunks))
+        increment_stat('total_numbers_processed', len(numbers))
 
     except Exception as e:
         logging.error(f"generate_vcf_router error: {e}")
         bot.send_message(chat_id, ERROR_X + f" Generation failed: {e}", parse_mode="HTML")
         return
 
-    lang = user_langs.get(chat_id, 'en')
+    lang = get_user_lang(chat_id)
     bot.send_message(
         chat_id,
         TEXTS[lang]['success'],
@@ -1263,8 +1498,10 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
         admin_contact_idx = 1
         navy_contact_idx  = 1
 
+        prog_msg = bot.send_message(chat_id, gen_progress_text(0, len(chunks)), parse_mode="HTML")
+
         # 2. Loop through chunks sending exactly one sequence flow of documents
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks, 1):
             vcf_content = ""
             for tag, num in chunk:
                 if tag == 'admin':
@@ -1292,13 +1529,24 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
             finally:
                 safe_delete_file(vcf_file_path)
             file_idx += 1
+            try:
+                bot.edit_message_text(
+                    gen_progress_text(idx, len(chunks)),
+                    chat_id, prog_msg.message_id, parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+        # Persist lifetime counters only after the combined stream was fully sent
+        increment_stat('total_files_generated', len(chunks))
+        increment_stat('total_numbers_processed', len(combined_package))
 
     except Exception as e:
         logging.error(f"generate_navy_vcf error: {e}")
         bot.send_message(chat_id, ERROR_X + f" Generation failed: {e}", parse_mode="HTML")
         return
 
-    lang = user_langs.get(chat_id, 'en')
+    lang = get_user_lang(chat_id)
     bot.send_message(
         chat_id,
         TEXTS[lang]['success'],
@@ -1341,9 +1589,9 @@ def process_vcf_to_txt(message):
         safe_delete_file(txt_path)
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════���══════════════════════════════
 #  EXCEL TO TEXT MODULE
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════���════
 
 def process_excel_to_txt(message):
     if check_menu_or_commands(message):
@@ -1657,7 +1905,7 @@ def process_editor_vcf(message):
             'edit_file_id':   message.document.file_id,
             'edit_file_name': message.document.file_name
         }
-    lang = user_langs.get(message.chat.id, 'en')
+    lang = get_user_lang(message.chat.id)
     bot.send_message(message.chat.id, TEXTS[lang]['ask_new_prefix'], parse_mode="HTML")
     bot.register_next_step_handler_by_chat_id(message.chat.id, execute_editor_vcf)
 
