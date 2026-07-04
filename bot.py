@@ -243,6 +243,7 @@ except ImportError:
 TOKEN   = os.environ.get('TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 8632094892))
 DEFAULT_SPLIT_LIMIT = 200   # Internal default for Admin/Navy module ONLY
+BOT_START_TIME = time.time()  # Captured at import for uptime reporting in /health
 
 bot = telebot.TeleBot(TOKEN, threaded=True)
 user_data     = {}   # keyed by chat_id (int)
@@ -431,7 +432,7 @@ ALL_MENU_TEXTS = ALL_BUTTON_TEXTS | LANG_BUTTON_TEXTS
 #  exclusively from here, never from handle_menu_and_languages directly.
 #  This collapses the execution graph to a single path and eliminates every
 #  possible re-entrancy scenario.
-# ════════════════════════════════════════════════════════════════������═══════════════
+# ════════════════════════════════════════════════════════════════��������═══════════════
 
 def check_menu_or_commands(message):
     """Gate-keeper called at the top of every step-handler AND by the catch-all.
@@ -708,6 +709,67 @@ def bot_statistics_check(message):
     bot.send_message(message.chat.id, card, parse_mode="HTML")
 
 
+@bot.message_handler(commands=['health'])
+def bot_health_check(message):
+    # Strictly restricted to ADMIN_ID
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ This information is restricted to the Bot Administrator only."
+        )
+        return
+
+    # ─ Uptime ─
+    uptime_s   = int(time.time() - BOT_START_TIME)
+    days, rem  = divmod(uptime_s, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    if days:
+        uptime_str = f"{days}d {hours}h {mins}m"
+    elif hours:
+        uptime_str = f"{hours}h {mins}m {secs}s"
+    else:
+        uptime_str = f"{mins}m {secs}s"
+
+    # ─ Database health probe ─
+    db_status = "🟢 Connected"
+    db_size   = "—"
+    try:
+        total_users = get_total_users()
+        files_gen   = get_stat('total_files_generated')
+        nums_proc   = get_stat('total_numbers_processed')
+        if os.path.exists(DB_PATH):
+            db_size = f"{os.path.getsize(DB_PATH) / 1024:.1f} KB"
+    except Exception as ex:
+        logging.error(f"health db probe error: {ex}")
+        db_status = "🔴 Error"
+        total_users = files_gen = nums_proc = 0
+
+    # ─ Live latency probe (in-place edit, same pattern as /ping) ─
+    t0    = time.time()
+    probe = bot.send_message(message.chat.id, "🩺 <i>Running health diagnostics...</i>", parse_mode="HTML")
+    latency_ms = round((time.time() - t0) * 1000)
+
+    rows = [
+        ("Status",          "🟢 Online"),
+        ("Uptime",          uptime_str),
+        ("Latency",         f"{latency_ms} ms"),
+        ("Database",        db_status),
+        ("DB Size",         db_size),
+        ("Threads",         threading.active_count()),
+        ("Active Sessions", len(user_data)),
+        ("Merge Buffers",   len(merge_storage)),
+        "",
+        "─ Lifetime Totals ─",
+        ("Registered Users", total_users),
+        ("Files Generated",  files_gen),
+        ("Numbers Processed", nums_proc),
+    ]
+    title = f'{e("chart", "🩺")} <b>Bot Health Check</b>'
+    card  = render_card(title, rows, footer="All systems monitored • SQLite Persisted")
+    bot.edit_message_text(card, message.chat.id, probe.message_id, parse_mode="HTML")
+
+
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
     # Strictly restricted to ADMIN_ID — silently ignore everyone else
@@ -862,6 +924,22 @@ def handle_callbacks(call):
                 user_data[chat_id]['navy_numbers'] = []
         proceed_after_collection(chat_id)
 
+    elif call.data.startswith("normal_split_"):
+        # Hybrid split-size chooser — Normal Mode (Text/Excel to VCF) ONLY.
+        # The prompt message + its markup are already deleted and the pending
+        # step-handler already cleared at the top of this handler, so tapping a
+        # button will not double-fire with the manual text fallback.
+        try:
+            chosen = int(call.data.replace("normal_split_", ""))
+        except (ValueError, TypeError):
+            chosen = 200
+        with DATA_LOCK:
+            if chat_id not in user_data:
+                bot.send_message(chat_id, ERROR_X + " Session expired. Please start again.", parse_mode="HTML")
+                return
+            user_data[chat_id]['split_count'] = chosen
+        generate_vcf_router(call.message, forced_split=chosen)
+
 
 # ══ UNIVERSAL MULTI-FORMAT INPUT / OUTPUT HELPERS ══
 
@@ -1000,7 +1078,7 @@ def numbers_to_xlsx_bytes(numbers):
 #  TEXT/EXCEL → VCF NORMAL MODE FLOW
 #  Steps: process_inputs → get_file_name → get_prefix → get_company
 #         → get_start_number → generate_vcf_router
-# ════════════���══��════════════════════════════════════════════════════════════════
+# ════════���═══���══��════════════════════════════════════════════════════════════════
 
 def process_inputs(message):
     if check_menu_or_commands(message):
@@ -1122,33 +1200,50 @@ def get_start_number(message):
     with DATA_LOCK:
         if chat_id in user_data:
             user_data[chat_id]['file_start_idx'] = start_num
+    split_markup = InlineKeyboardMarkup(row_width=3)
+    split_markup.add(
+        InlineKeyboardButton("50",  callback_data="normal_split_50"),
+        InlineKeyboardButton("100", callback_data="normal_split_100"),
+        InlineKeyboardButton("150", callback_data="normal_split_150"),
+        InlineKeyboardButton("200", callback_data="normal_split_200"),
+        InlineKeyboardButton("250", callback_data="normal_split_250"),
+        InlineKeyboardButton("300", callback_data="normal_split_300"),
+    )
     bot.send_message(
         chat_id,
-        "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> <b>How many contacts per VCF file?</b>\n<i>(Safe Margin: 200 - 250)</i>:",
+        "<tg-emoji emoji-id=\"5195233277790668761\">5️⃣</tg-emoji> <b>How many contacts per VCF file?</b>\n<i>(Safe Margin: 200 - 250)</i>\n<i>Tap a size below or type a custom number:</i>",
+        reply_markup=split_markup,
         parse_mode="HTML"
     )
     bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
 
 
-def generate_vcf_router(message):
-    """Step 5 (final) of Normal Mode: read split count and generate files."""
-    if check_menu_or_commands(message):
-        return
+def generate_vcf_router(message, forced_split=None):
+    """Step 5 (final) of Normal Mode: read split count and generate files.
+    Hybrid input: `forced_split` is supplied when the user taps an inline
+    split-size button; otherwise the split count is parsed from typed text
+    exactly as before (manual entry fallback)."""
+    if forced_split is None:
+        if check_menu_or_commands(message):
+            return
     chat_id = message.chat.id
 
-    if not message.text:
-        bot.send_message(chat_id, ERROR_X + " Please enter a valid number.", parse_mode="HTML")
-        bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
-        return
+    if forced_split is not None:
+        split_count = forced_split
+    else:
+        if not message.text:
+            bot.send_message(chat_id, ERROR_X + " Please enter a valid number.", parse_mode="HTML")
+            bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
+            return
 
-    try:
-        split_count = int(message.text.strip())
-        if split_count <= 0:
-            raise ValueError("Must be positive")
-    except (ValueError, TypeError):
-        bot.send_message(chat_id, ERROR_X + " Please enter a valid positive number.", parse_mode="HTML")
-        bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
-        return
+        try:
+            split_count = int(message.text.strip())
+            if split_count <= 0:
+                raise ValueError("Must be positive")
+        except (ValueError, TypeError):
+            bot.send_message(chat_id, ERROR_X + " Please enter a valid positive number.", parse_mode="HTML")
+            bot.register_next_step_handler_by_chat_id(chat_id, generate_vcf_router)
+            return
 
     with DATA_LOCK:
         data = user_data.get(chat_id)
@@ -1558,7 +1653,7 @@ def generate_navy_vcf(chat_id, split_count=DEFAULT_SPLIT_LIMIT):
     )
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════��
 #  VCF → TEXT MODULE
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -1900,7 +1995,7 @@ def execute_merge_vcf(message):
             merge_storage.pop(chat_id, None)
 
 
-# ════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════��════════════════════════════════════════════════════════════
 #  VCF EDITOR MODULE
 # ═══════════════════════════════════════════════════════════��════════════════════
 
